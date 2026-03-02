@@ -18,6 +18,7 @@ async def progress_stats_menu(callback: CallbackQuery):
         (user_id,)
     )
     
+    # Формируем текст
     if stats:
         text = (
             f"📈 *Ваш прогресс*\n\n"
@@ -33,25 +34,18 @@ async def progress_stats_menu(callback: CallbackQuery):
     else:
         text = "📈 *Ваш прогресс*\n\nПока нет данных. Начните тренироваться! 💪"
     
-    # Красивые кнопки
+    # Клавиатура
     builder = InlineKeyboardBuilder()
-    
     builder.row(
-        InlineKeyboardButton(text="📊 ГРАФИКИ", callback_data="progress_charts"),
-        InlineKeyboardButton(text="📈 ДЕТАЛИ", callback_data="stats")
+        InlineKeyboardButton(text="📊 ДЕТАЛИ", callback_data="stats")
     )
-    
     builder.row(
         InlineKeyboardButton(text="📅 КАЛЕНДАРЬ", callback_data="calendar"),
         InlineKeyboardButton(text="🏆 ЛИДЕРЫ", callback_data="global_leaderboard")
     )
-    
     builder.row(
         InlineKeyboardButton(text="◀️ НАЗАД", callback_data="back_to_main")
     )
     
-    await callback.message.edit_text(
-        caption=text,
-        reply_markup=builder.as_markup()
-    )
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
