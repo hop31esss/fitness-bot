@@ -19,7 +19,7 @@ from handlers.admin_panel import router as admin_panel_router
 from handlers.common import router as common_router
 
 # --- ИМПОРТЫ, КОТОРЫЕ МОГУТ ВЫЗЫВАТЬ ПРОБЛЕМЫ (ЗАКОММЕНТИРОВАНЫ) ---
-# from handlers.training import router as training_router
+from handlers.training import router as training_router
 # from handlers.one_rep_max import router as one_rep_max_router
 # from handlers.calorie_tracker import router as calorie_tracker_router
 # from handlers.friends import router as friends_router
@@ -63,6 +63,7 @@ async def main():
         (settings_router, "Настройки"),
         (premium_router, "Премиум"),
         (admin_panel_router, "Админ-панель"),
+        (training_router, "Тренировки"),
         (common_router, "Общие обработчики"),
     ]
 
