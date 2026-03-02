@@ -20,9 +20,21 @@ class AddExerciseStates(StatesGroup):
 async def training_journal(callback: CallbackQuery):
     """Журнал тренировок - главное меню"""
     text = "📒 *Журнал тренировок*\n\nВыберите действие:"
-    keyboard = get_training_menu_keyboard()
     
-    await callback.message.edit_text(text, reply_markup=keyboard)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🏋️ НАЧАТЬ ТРЕНИРОВКУ", callback_data="start_workout"),  # ВАЖНО: start_workout!
+        InlineKeyboardButton(text="📋 ИСТОРИЯ", callback_data="workout_history")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💪 МОИ УПРАЖНЕНИЯ", callback_data="my_exercises"),
+        InlineKeyboardButton(text="📝 ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_exercise")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+    )
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
 # ================ ИСТОРИЯ ТРЕНИРОВОК ================
