@@ -13,6 +13,18 @@ from database.base import db
 router = Router()
 logger = logging.getLogger(__name__)
 
+# === ДИАГНОСТИКА ===
+logger.info(f"Текущая директория: {os.getcwd()}")
+logger.info(f"Файлы в директории: {os.listdir('.')}")
+logger.info(f"Права на запись: {os.access('.', os.W_OK)}")
+
+# Проверяем существование файла БД
+db_path = 'fitness_bot.db'
+if os.path.exists(db_path):
+    logger.info(f"✅ Файл БД найден, размер: {os.path.getsize(db_path)} байт")
+else:
+    logger.info(f"❌ Файл БД НЕ найден, будет создан новый")
+
 # === ЖЕСТКОЕ СОЗДАНИЕ ТАБЛИЦ ===
 def init_workout_db():
     """Инициализация базы данных для тренировок"""
