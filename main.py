@@ -38,6 +38,54 @@ from handlers.workout_session import router as workout_session_router
 # from middlewares.subscription import SubscriptionMiddleware
 # from middlewares.premium_check import PremiumCheckMiddleware
 
+import sqlite3
+import logging
+
+# Синхронное создание таблиц (гарантированно работает)
+def create_tables_sync():
+    """Создание таблиц синхронно при старте"""
+    conn = sqlite3.connect('fitness_bot.db')
+    cursor = conn.cursor()
+    
+    # Таблица тренировок
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workout_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            date DATE NOT NULL,
+            start_time TIME,
+            end_time TIME,
+            notes TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS workout_exercises (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            exercise_name TEXT NOT NULL,
+            exercise_type TEXT DEFAULT 'strength',
+            sets INTEGER,
+            reps INTEGER,
+            weight REAL,
+            duration INTEGER,
+            distance REAL,
+            pace TEXT,
+            speed REAL,
+            notes TEXT,
+            order_num INTEGER
+        )
+    """)
+    
+    conn.commit()
+    conn.close()
+    logging.info("✅ Таблицы созданы синхронно")
+
+# Вызываем ДО инициализации бота
+create_tables_sync()
+
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
