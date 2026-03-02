@@ -31,7 +31,6 @@ from handlers.admin_panel import router as admin_panel_router
 from handlers.common import router as common_router
 from handlers.payment import router as payment_router
 from handlers.ai_advice import router as ai_advice_router
-from handlers.progress_stats import router as progress_stats_router
 from handlers.workout_session import router as workout_session_router
 
 # Временно отключаем все мидлвари
@@ -92,7 +91,6 @@ async def main():
         (admin_panel_router, "Админ-панель"),
         (payment_router, "Платежи"),
         (ai_advice_router, "AI-советы"),
-        (progress_stats_router, "Прогресс статистика"),
         (workout_session_router, "Тренировочные сессии"),
         (common_router, "Общие обработчики"),
     ]
