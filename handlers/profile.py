@@ -6,7 +6,7 @@ from database.base import db
 from services.analytics import get_user_stats, get_workout_history
 from services.export import export_user_data
 from utils.formatters import format_stats
-import matplotlib.pyplot as plt
+#import matplotlib.pyplot as plt
 import io
 from aiogram.types import BufferedInputFile
 import os
