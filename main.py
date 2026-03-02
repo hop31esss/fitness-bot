@@ -55,6 +55,10 @@ async def main():
     await init_db()
     logger.info("База данных инициализирована")
     
+    # Создаем недостающие таблицы
+    from database.create_tables import create_missing_tables
+    await asyncio.to_thread(create_missing_tables)
+    logger.info("✅ Недостающие таблицы проверены")
     # Регистрация middleware (ВРЕМЕННО ОТКЛЮЧАЕМ)
     # if ADMIN_IDS:
     #     dp.message.middleware(AdminMiddleware(ADMIN_IDS))
