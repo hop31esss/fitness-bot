@@ -1,0 +1,37 @@
+# База данных
+*.db
+*.db-journal
+
+# Папки с данными
+exports/
+backups/
+data/
+
+# Логи
+*.log
+errors.log
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.so
+*.dll
+*.egg-info/
+dist/
+build/
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# Секреты
+.env
+config_local.py

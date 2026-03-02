@@ -1,0 +1,34 @@
+import os
+from typing import List
+
+# Токен бота
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8391767389:AAFjf5bQDvi12-DbE3pbATzmYdjjki0Jq0A")
+
+# ID администратора (ВАШ ID)
+ADMIN_ID = 385450652
+
+# Список администраторов (для совместимости)
+ADMIN_IDS = [385450652]
+
+# Список друзей с премиум-доступом
+PREMIUM_FRIENDS = [
+    # Добавляйте сюда ID друзей
+    # 123456789,
+]
+
+# НАСТРОЙКИ ОПЛАТЫ ЧЕРЕЗ STARS
+STARS_PRICE = 20  # Цена в Telegram Stars (минимально 1 Star)
+SUBSCRIPTION_DAYS = 30  # Дней действует подписка
+
+# Настройки базы данных
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///fitness_bot.db")
+
+# OpenAI API ключ (получите на platform.openai.com)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-aitunnel-dAut1vwt4gXAHGjwqXJ621cvxLpJ1kJP")  # ВСТАВЬТЕ СВОЙ КЛЮЧ!
+OPENAI_ENABLED = True  # Включаем OpenAI
+# Настройки экспорта
+EXPORT_PATH = os.getenv("EXPORT_PATH", "exports")
+
+# Создание директорий если нужно
+os.makedirs(EXPORT_PATH, exist_ok=True)
+os.makedirs("backups", exist_ok=True)

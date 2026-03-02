@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  fitness-bot:
+    build: .
+    container_name: fitness-bot
+    restart: unless-stopped
+    environment:
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_ID=${ADMIN_ID}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+    volumes:
+      - ./data:/app/data
+      - ./backups:/app/backups
+      - ./exports:/app/exports
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"

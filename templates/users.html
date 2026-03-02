@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Пользователи - FitnessBot Admin</title>
+    <style>
+        body { font-family: Arial; padding: 20px; background: #f5f5f5; }
+        table { width: 100%; background: white; border-collapse: collapse; }
+        th { background: #2c3e50; color: white; padding: 10px; }
+        td { padding: 10px; border-bottom: 1px solid #ddd; }
+        .premium-yes { color: green; font-weight: bold; }
+        .premium-no { color: red; }
+        .nav { background: white; padding: 10px; margin-bottom: 20px; border-radius: 5px; }
+        .nav a { margin-right: 15px; color: #3498db; text-decoration: none; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/">Главная</a>
+        <a href="/users">Пользователи</a>
+        <a href="/backup">Создать бэкап</a>
+        <a href="/logout">Выйти</a>
+    </div>
+    
+    <h2>👥 Пользователи (последние 100)</h2>
+    
+    <table>
+        <tr>
+            <th>ID</th>
+            <th>Username</th>
+            <th>Имя</th>
+            <th>Дата регистрации</th>
+            <th>Премиум</th>
+            <th>Действует до</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] or '-' }}</td>
+            <td>{{ user[2] or '-' }}</td>
+            <td>{{ user[3][:10] if user[3] else '-' }}</td>
+            <td class="{% if user[4] %}premium-yes{% else %}premium-no{% endif %}">
+                {% if user[4] %}✅{% else %}❌{% endif %}
+            </td>
+            <td>{{ user[5][:10] if user[5] else '-' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+</body>
+</html>

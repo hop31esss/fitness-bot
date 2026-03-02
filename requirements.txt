@@ -1,0 +1,11 @@
+openai==1.55.3
+httpx==0.27.2
+aiogram==3.10.0
+aiosqlite==0.19.0
+python-dotenv==1.0.0
+flask==3.0.0
+schedule==1.2.0
+# matplotlib можно оставить, но если не нужны графики - закомментируйте
+matplotlib==3.7.0
+# pandas - удаляем, она не нужна для работы бота
+# apscheduler - пока не нужен
