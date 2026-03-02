@@ -12,53 +12,9 @@ from keyboards.training import get_exercises_keyboard
 router = Router()
 logger = logging.getLogger(__name__)
 
-
-# ================ СОЗДАНИЕ ТАБЛИЦ ================
-
-async def ensure_tables_exist():
-    """Проверяет и создает необходимые таблицы"""
-    try:
-        # Создаем таблицу workout_sessions
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS workout_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                date DATE NOT NULL,
-                start_time TIME,
-                end_time TIME,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                FOREIGN KEY (user_id) REFERENCES users (user_id)
-            )
-        """)
-        logger.info("✅ Таблица workout_sessions создана/проверена")
-        
-        # Создаем таблицу workout_exercises
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS workout_exercises (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                exercise_name TEXT NOT NULL,
-                exercise_type TEXT DEFAULT 'strength',
-                sets INTEGER,
-                reps INTEGER,
-                weight REAL,
-                duration INTEGER,
-                distance REAL,
-                pace TEXT,
-                speed REAL,
-                notes TEXT,
-                order_num INTEGER,
-                FOREIGN KEY (session_id) REFERENCES workout_sessions (id)
-            )
-        """)
-        logger.info("✅ Таблица workout_exercises создана/проверена")
-    except Exception as e:
-        logger.error(f"❌ Ошибка при создании таблиц: {e}")
-
 # Вызываем при импорте модуля
-import asyncio
-asyncio.create_task(ensure_tables_exist())
+#import asyncio
+#asyncio.create_task(ensure_tables_exist())
 
 # ================ СОСТОЯНИЯ ================
 
