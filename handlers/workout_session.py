@@ -47,8 +47,8 @@ async def init_workout_tables():
         logger.error(f"❌ Ошибка создания таблиц: {e}")
         return False
 
-import asyncio
-asyncio.create_task(init_workout_tables())
+# Таблицы будут созданы при первом вызове функций
+# Просто объявляем функцию, но не вызываем её здесь
 
 class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
@@ -61,6 +61,7 @@ class WorkoutSessionStates(StatesGroup):
 
 @router.callback_query(F.data == "start_workout")
 async def start_workout(callback: CallbackQuery, state: FSMContext):
+    await init_workout_tables()
     user_id = callback.from_user.id
     today = date.today().isoformat()
     current_time = datetime.now().strftime("%H:%M")
