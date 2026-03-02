@@ -6,12 +6,60 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date
 import logging
 import sqlite3
-
 from database.base import db
 from keyboards.training import get_exercises_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
+
+
+# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ ===
+def create_workout_tables():
+    """Создает таблицы для тренировок"""
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        
+        # Таблица тренировок
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                start_time TEXT,
+                end_time TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Таблица упражнений
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_exercises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                exercise_type TEXT DEFAULT 'strength',
+                sets INTEGER,
+                reps INTEGER,
+                weight REAL,
+                duration INTEGER,
+                distance REAL,
+                notes TEXT,
+                order_num INTEGER
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+        logger.info("✅ Таблицы для тренировок созданы")
+        return True
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблиц: {e}")
+        return False
+
+# Вызываем сразу
+create_workout_tables()
 
 # === ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ ===
 def ensure_tables():
