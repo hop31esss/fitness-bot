@@ -4,11 +4,61 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date
+import logging
 
 from database.base import db
 from keyboards.training import get_exercises_keyboard
 
 router = Router()
+logger = logging.getLogger(__name__)
+
+
+# ================ СОЗДАНИЕ ТАБЛИЦ ================
+
+async def ensure_tables_exist():
+    """Проверяет и создает необходимые таблицы"""
+    try:
+        # Создаем таблицу workout_sessions
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS workout_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                start_time TIME,
+                end_time TIME,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (user_id)
+            )
+        """)
+        logger.info("✅ Таблица workout_sessions создана/проверена")
+        
+        # Создаем таблицу workout_exercises
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS workout_exercises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                exercise_type TEXT DEFAULT 'strength',
+                sets INTEGER,
+                reps INTEGER,
+                weight REAL,
+                duration INTEGER,
+                distance REAL,
+                pace TEXT,
+                speed REAL,
+                notes TEXT,
+                order_num INTEGER,
+                FOREIGN KEY (session_id) REFERENCES workout_sessions (id)
+            )
+        """)
+        logger.info("✅ Таблица workout_exercises создана/проверена")
+    except Exception as e:
+        logger.error(f"❌ Ошибка при создании таблиц: {e}")
+
+# Вызываем при импорте модуля
+import asyncio
+asyncio.create_task(ensure_tables_exist())
 
 # ================ СОСТОЯНИЯ ================
 
@@ -34,22 +84,29 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
     today = date.today().isoformat()
     current_time = datetime.now().strftime("%H:%M")
     
-    # Создаем новую тренировку
-    await db.execute(
-        "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
-        (user_id, today, current_time)
-    )
+    try:
+        # Сначала убедимся, что таблица существует
+        await ensure_tables_exist()
+        
+        # Создаем новую тренировку
+        await db.execute(
+            "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
+            (user_id, today, current_time)
+        )
+        
+        result = await db.fetch_one("SELECT last_insert_rowid() as id")
+        session_id = result['id']
+        
+        await state.update_data(
+            session_id=session_id,
+            exercises=[]
+        )
+        
+        await show_workout_menu(callback.message, state)
+    except Exception as e:
+        logger.error(f"Ошибка при создании тренировки: {e}")
+        await callback.message.answer("❌ Не удалось создать тренировку. Попробуйте позже.")
     
-    result = await db.fetch_one("SELECT last_insert_rowid() as id")
-    session_id = result['id']
-    
-    await state.update_data(
-        session_id=session_id,
-        exercises=[]
-    )
-    
-    # Отправляем новое сообщение с меню тренировки
-    await show_workout_menu(callback.message, state)
     await callback.answer()
 
 async def show_workout_menu(message, state: FSMContext):
