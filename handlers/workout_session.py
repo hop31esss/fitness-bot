@@ -6,22 +6,26 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date
 import logging
 import sqlite3
+import os
+
 from database.base import db
-from keyboards.training import get_exercises_keyboard
 
 router = Router()
 logger = logging.getLogger(__name__)
 
-
-# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ ===
-def create_workout_tables():
-    """Создает таблицы для тренировок"""
+# === ЖЕСТКОЕ СОЗДАНИЕ ТАБЛИЦ ===
+def init_workout_db():
+    """Инициализация базы данных для тренировок"""
     try:
-        conn = sqlite3.connect('fitness_bot.db')
+        # Проверяем существование файла базы
+        db_path = 'fitness_bot.db'
+        logger.info(f"📁 Путь к БД: {os.path.abspath(db_path)}")
+        
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
         
-        # Таблица тренировок
-        cursor.execute("""
+        # Создаем таблицу тренировок
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS workout_sessions (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id INTEGER NOT NULL,
@@ -31,10 +35,11 @@ def create_workout_tables():
                 notes TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
-        """)
+        ''')
+        logger.info("✅ Таблица workout_sessions создана/проверена")
         
-        # Таблица упражнений
-        cursor.execute("""
+        # Создаем таблицу упражнений
+        cursor.execute('''
             CREATE TABLE IF NOT EXISTS workout_exercises (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 session_id INTEGER NOT NULL,
@@ -48,64 +53,23 @@ def create_workout_tables():
                 notes TEXT,
                 order_num INTEGER
             )
-        """)
+        ''')
+        logger.info("✅ Таблица workout_exercises создана/проверена")
+        
+        # Проверяем, что таблицы действительно создались
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        logger.info(f"📊 Таблицы в БД: {[t[0] for t in tables]}")
         
         conn.commit()
         conn.close()
-        logger.info("✅ Таблицы для тренировок созданы")
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка создания таблиц: {e}")
         return False
 
-# Вызываем сразу
-create_workout_tables()
-
-# === ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ ===
-def ensure_tables():
-    """Создает таблицы если их нет"""
-    try:
-        conn = sqlite3.connect('fitness_bot.db')
-        cursor = conn.cursor()
-        
-        # Таблица тренировок
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS workout_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
-                start_time TEXT,
-                end_time TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        
-        # Таблица упражнений
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS workout_exercises (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                exercise_name TEXT NOT NULL,
-                exercise_type TEXT DEFAULT 'strength',
-                sets INTEGER,
-                reps INTEGER,
-                weight REAL,
-                duration INTEGER,
-                distance REAL,
-                notes TEXT,
-                order_num INTEGER
-            )
-        """)
-        
-        conn.commit()
-        conn.close()
-        logger.info("✅ Таблицы для тренировок созданы/проверены")
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания таблиц: {e}")
-
 # Вызываем при импорте
-ensure_tables()
+init_workout_db()
 
 class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
@@ -124,6 +88,15 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
     current_time = datetime.now().strftime("%H:%M")
     
     try:
+        # Проверяем таблицу перед вставкой
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workout_sessions'")
+        if not cursor.fetchone():
+            logger.error("❌ Таблица workout_sessions не существует! Создаем...")
+            init_workout_db()
+        conn.close()
+        
         # Создаем новую тренировку
         await db.execute(
             "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
@@ -132,6 +105,7 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
         
         result = await db.fetch_one("SELECT last_insert_rowid() as id")
         session_id = result['id']
+        logger.info(f"✅ Создана тренировка с ID {session_id}")
         
         await state.update_data(
             session_id=session_id,
@@ -140,8 +114,8 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
         
         await show_workout_menu(callback.message, state)
     except Exception as e:
-        logger.error(f"Ошибка: {e}")
-        await callback.message.answer("❌ Ошибка создания тренировки")
+        logger.error(f"❌ Ошибка при создании тренировки: {e}")
+        await callback.message.answer(f"❌ Ошибка создания тренировки: {e}")
     
     await callback.answer()
 
@@ -221,7 +195,7 @@ async def process_sets(message: Message, state: FSMContext):
         await state.update_data(sets=sets)
         await message.answer("Введите количество повторений:")
         await state.set_state(WorkoutSessionStates.entering_reps)
-    except:
+    except ValueError:
         await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_reps)
@@ -232,7 +206,7 @@ async def process_reps(message: Message, state: FSMContext):
         await state.update_data(reps=reps)
         await message.answer("Введите вес (кг) или '-'")
         await state.set_state(WorkoutSessionStates.entering_weight)
-    except:
+    except ValueError:
         await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_weight)
@@ -257,7 +231,7 @@ async def process_duration(message: Message, state: FSMContext):
         else:
             await save_exercise(state, message)
             await show_workout_menu(message, state)
-    except:
+    except ValueError:
         await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_distance)
@@ -268,7 +242,7 @@ async def process_distance(message: Message, state: FSMContext):
         await state.update_data(distance=distance)
         await save_exercise(state, message)
         await show_workout_menu(message, state)
-    except:
+    except ValueError:
         await message.answer("❌ Введите число")
 
 async def save_exercise(state: FSMContext, message: Message):
@@ -298,22 +272,28 @@ async def save_exercise(state: FSMContext, message: Message):
     
     # Сохраняем в БД
     session_id = data['session_id']
-    if exercise['type'] == 'strength':
-        await db.execute("""
-            INSERT INTO workout_exercises 
-            (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (session_id, exercise['name'], 'strength', 
-              exercise['sets'], exercise['reps'], exercise.get('weight'),
-              len(exercises)))
-    else:
-        await db.execute("""
-            INSERT INTO workout_exercises 
-            (session_id, exercise_name, exercise_type, duration, distance, order_num)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (session_id, exercise['name'], 'cardio',
-              exercise.get('duration'), exercise.get('distance'),
-              len(exercises)))
+    order_num = len(exercises)
+    
+    try:
+        if exercise['type'] == 'strength':
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'strength', 
+                  exercise['sets'], exercise['reps'], exercise.get('weight'),
+                  order_num))
+        else:
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, duration, distance, order_num)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'cardio',
+                  exercise.get('duration'), exercise.get('distance'),
+                  order_num))
+        logger.info(f"✅ Упражнение {exercise['name']} сохранено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения упражнения: {e}")
 
 @router.callback_query(F.data == "finish_workout")
 async def finish_workout(callback: CallbackQuery, state: FSMContext):
