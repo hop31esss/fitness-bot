@@ -17,13 +17,17 @@ class WorkoutStates(StatesGroup):
 
 @router.callback_query(F.data == "training_journal")
 async def training_journal(callback: CallbackQuery):
-    """Журнал тренировок"""
+    """Журнал тренировок - главное меню"""
     text = "📒 *Журнал тренировок*\n\nВыберите действие:"
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="➕ ДОБАВИТЬ ТРЕНИРОВКУ", callback_data="add_workout"),
+        InlineKeyboardButton(text="🏋️ НАЧАТЬ ТРЕНИРОВКУ", callback_data="start_workout"),  # ВЕДЁТ В СЕССИИ
         InlineKeyboardButton(text="📋 ИСТОРИЯ", callback_data="workout_history")
+    )
+    builder.row(
+        InlineKeyboardButton(text="💪 МОИ УПРАЖНЕНИЯ", callback_data="my_exercises"),
+        InlineKeyboardButton(text="📝 ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_exercise")
     )
     builder.row(
         InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
