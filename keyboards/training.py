@@ -6,7 +6,7 @@ def get_training_menu_keyboard() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     
     builder.row(
-        InlineKeyboardButton(text="🏋️ НАЧАТЬ ТРЕНИРОВКУ", callback_data="start_workout"),
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ ТРЕНИРОВКУ", callback_data="add_workout"),
         InlineKeyboardButton(text="📋 ИСТОРИЯ", callback_data="workout_history")
     )
     builder.row(
