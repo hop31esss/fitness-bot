@@ -30,7 +30,7 @@ from handlers.premium import router as premium_router
 from handlers.admin_panel import router as admin_panel_router
 from handlers.common import router as common_router
 from handlers.payment import router as payment_router
-from handlers.progress_charts import router as charts_router
+#from handlers.progress_charts import router as charts_router
 from handlers.ai_advice import router as ai_advice_router
 from handlers.progress_stats import router as progress_stats_router
 from handlers.workout_session import router as workout_session_router
@@ -92,7 +92,7 @@ async def main():
         (premium_router, "Премиум"),
         (admin_panel_router, "Админ-панель"),
         (payment_router, "Платежи"),
-        (charts_router, "Графики прогресса"),
+        #(charts_router, "Графики прогресса"),
         (ai_advice_router, "AI-советы"),
         (progress_stats_router, "Прогресс статистика"),
         (workout_session_router, "Тренировочные сессии"),
