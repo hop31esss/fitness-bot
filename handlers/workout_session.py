@@ -41,8 +41,7 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
     current_time = datetime.now().strftime("%H:%M")
     
     try:
-        # Сначала убедимся, что таблица существует
-        await ensure_tables_exist()
+        # УБИРАЕМ await ensure_tables_exist() - этой функции больше нет!
         
         # Создаем новую тренировку
         await db.execute(
@@ -61,7 +60,7 @@ async def start_workout(callback: CallbackQuery, state: FSMContext):
         await show_workout_menu(callback.message, state)
     except Exception as e:
         logger.error(f"Ошибка при создании тренировки: {e}")
-        await callback.message.answer("❌ Не удалось создать тренировку. Попробуйте позже.")
+        await callback.message.answer("❌ Ошибка создания тренировки")
     
     await callback.answer()
 
