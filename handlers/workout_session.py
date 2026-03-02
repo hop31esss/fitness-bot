@@ -5,6 +5,7 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date
 import logging
+import sqlite3 
 
 from database.base import db
 from keyboards.training import get_exercises_keyboard
@@ -12,6 +13,51 @@ from keyboards.training import get_exercises_keyboard
 router = Router()
 logger = logging.getLogger(__name__)
 
+# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦ СИНХРОННО ===
+def create_tables_if_not_exist():
+    """Создает таблицы синхронно при импорте модуля"""
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date DATE NOT NULL,
+                start_time TIME,
+                end_time TIME,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_exercises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                exercise_type TEXT DEFAULT 'strength',
+                sets INTEGER,
+                reps INTEGER,
+                weight REAL,
+                duration INTEGER,
+                distance REAL,
+                pace TEXT,
+                speed REAL,
+                notes TEXT,
+                order_num INTEGER
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+        logger.info("✅ Таблицы созданы синхронно из workout_session.py")
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблиц: {e}")
+
+# Вызываем сразу при импорте
+create_tables_if_not_exist()
 # Вызываем при импорте модуля
 #import asyncio
 #asyncio.create_task(ensure_tables_exist())
