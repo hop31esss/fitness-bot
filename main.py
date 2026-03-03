@@ -34,7 +34,7 @@ from handlers.training import router as training_router
 # from handlers.daily_routine import router as daily_routine_router
 # from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
-#from handlers.progress_charts import router as charts_router
+from handlers.progress_stats import router as progress_stats_router
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -57,6 +57,7 @@ async def main():
     routers = [
         (start_router, "Стартовые команды"),
         (profile_router, "Профиль"),
+        (progress_stats_router, "Прогресс статистика"),
         (leaderboard_router, "Лидерборды"),
         (achievements_router, "Достижения"),
         (timer_router, "Таймер"),
