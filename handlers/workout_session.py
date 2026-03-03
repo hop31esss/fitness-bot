@@ -47,8 +47,8 @@ async def init_workout_tables():
         logger.error(f"❌ Ошибка создания таблиц: {e}")
         return False
 
-import asyncio
-asyncio.create_task(init_workout_tables())
+async def init_workout_tables():
+    # ... код функции ...
 
 class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
