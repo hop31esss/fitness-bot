@@ -84,6 +84,9 @@ async def friends_menu(callback: CallbackQuery):
         InlineKeyboardButton(text="📨 Входящие заявки", callback_data="friend_requests"),
         InlineKeyboardButton(text="↩️ В меню", callback_data="back_to_main")
     )
+    builder.row(
+        InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")
+)
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
