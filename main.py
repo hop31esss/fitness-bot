@@ -35,6 +35,7 @@ from handlers.training import router as training_router
 # from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
+from handlers.progress_charts import router as charts_router
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -53,7 +54,7 @@ async def main():
     await init_db()
     logger.info("База данных инициализирована")
 
-    # --- РЕГИСТРАЦИЯ РОУТЕРОВ (только базовые) ---
+    # --- РЕГИСТРАЦИЯ РОУТЕРОВ  ---
     routers = [
         (start_router, "Стартовые команды"),
         (profile_router, "Профиль"),
@@ -67,9 +68,14 @@ async def main():
         (admin_panel_router, "Админ-панель"),
         (training_router, "Тренировки"),
         (workout_session_router, "Тренировочные сессии"),
-        #(charts_router, "Графики прогресса"),
+        (charts_router, "Графики прогресса"),
         (common_router, "Общие обработчики"),
     ]
+    logger.info(f"charts_router: {charts_router}")
+    if charts_router:
+       logger.info("✅ charts_router успешно импортирован")
+    else:
+       logger.error("❌ charts_router = None")
 
     for router, name in routers:
         try:
