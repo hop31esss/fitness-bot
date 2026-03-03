@@ -19,7 +19,7 @@ from handlers.common import router as common_router
 from handlers.training import router as training_router
 from handlers.progress_charts import router as charts_router
 from handlers.one_rep_max import router as one_rep_max_router
-# from handlers.calorie_tracker import router as calorie_tracker_router
+from handlers.calorie_tracker import router as calorie_tracker_router
 from handlers.friends import router as friends_router
 # from handlers.ai_advice import router as ai_advice_router
 # from handlers.payment import router as payment_router
@@ -69,6 +69,7 @@ async def main():
         (charts_router, "Графики прогресса"),
         (one_rep_max_router, "1ПМ"),
         (challenges_router, "Челленджи"),
+        (calorie_tracker_router, "Калории"),
         (common_router, "Общие обработчики"),
     ]
     logger.info(f"charts_router: {charts_router}")
