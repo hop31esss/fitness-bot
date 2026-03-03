@@ -22,10 +22,12 @@ async def progress_stats_menu(callback: CallbackQuery):
         )
         
         # Получаем количество тренировок
-        total_workouts = await db.fetch_one(
-            "SELECT COUNT(*) as count FROM workouts WHERE user_id = ?",
+        # Считаем тренировки из новой системы (сессии)
+        total_sessions = await db.fetch_one(
+            "SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = ?",
             (user_id,)
         )
+        total_workouts = total_sessions['count'] if total_sessions else 0
         
         if stats:
             text = (

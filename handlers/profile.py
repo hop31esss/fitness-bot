@@ -41,15 +41,17 @@ async def show_progress(callback: CallbackQuery):
     end_date = datetime.now()
     start_date = end_date - timedelta(days=30)
     
+    # Берем данные из новых сессий
     history = await db.fetch_all("""
-        SELECT date(created_at) as date, 
-               COUNT(*) as workout_count,
-               SUM(sets * reps * COALESCE(weight, 1)) as total_volume
-        FROM workouts 
-        WHERE user_id = ? AND created_at BETWEEN ? AND ?
-        GROUP BY date(created_at)
-        ORDER BY date
-    """, (user_id, start_date, end_date))
+        SELECT ws.date, 
+               COUNT(we.id) as workout_count,
+               SUM(we.sets * we.reps * COALESCE(we.weight, 1)) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN workout_exercises we ON ws.id = we.session_id
+        WHERE ws.user_id = ? AND ws.date BETWEEN ? AND ?
+        GROUP BY ws.date
+        ORDER BY ws.date
+    """, (user_id, start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')))
     
     if not history:
         await callback.message.edit_text(
