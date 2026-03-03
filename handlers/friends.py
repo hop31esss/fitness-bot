@@ -58,10 +58,10 @@ async def friends_menu(callback: CallbackQuery):
         return
     
     # Получаем статистику друзей
-    friends_count = await db.fetch_one(
-        "SELECT COUNT(*) as count FROM friends WHERE user_id = ? AND status = 'accepted'",
-        (user_id,)
-    )
+    friends_count = await db.fetch_one("""
+        SELECT COUNT(*) as count FROM friends 
+        WHERE status = 'accepted' AND (user_id = ? OR friend_id = ?)
+    """, (user_id, user_id))
     
     pending_requests = await db.fetch_one(
         "SELECT COUNT(*) as count FROM friends WHERE friend_id = ? AND status = 'pending'",
