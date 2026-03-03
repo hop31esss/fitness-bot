@@ -27,7 +27,11 @@ async def progress_stats_menu(callback: CallbackQuery):
             "SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = ?",
             (user_id,)
         )
-        total_workouts = total_sessions['count'] if total_sessions else 0
+        if total_sessions:
+            total_workouts = total_sessions['count']
+        else:
+            total_workouts = 0
+            logger.info("No workout sessions found")
         
         if stats:
             text = (
