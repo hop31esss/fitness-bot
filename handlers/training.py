@@ -108,17 +108,23 @@ async def workout_history(callback: CallbackQuery):
     """История тренировок"""
     user_id = callback.from_user.id
     
-    workouts = await db.fetch_all(
-        "SELECT exercise_name, sets, reps, weight, created_at FROM workouts WHERE user_id = ? ORDER BY created_at DESC LIMIT 20",
-        (user_id,)
-    )
-    
-    if workouts:
+    # Показываем сессии с упражнениями
+    sessions = await db.fetch_all("""
+        SELECT ws.id, ws.date, ws.start_time,
+               GROUP_CONCAT(we.exercise_name || ' ' || we.sets || '×' || we.reps, '\n') as exercises
+        FROM workout_sessions ws
+        LEFT JOIN workout_exercises we ON ws.id = we.session_id
+        WHERE ws.user_id = ?
+        GROUP BY ws.id
+        ORDER BY ws.date DESC, ws.start_time DESC
+        LIMIT 10
+    """, (user_id,))
+
+    if sessions:
         text = "📋 *История тренировок*\n\n"
-        for w in workouts:
-            date = w['created_at'][:16] if w['created_at'] else ""
-            weight = f", {w['weight']} кг" if w['weight'] else ""
-            text += f"• {date}: {w['exercise_name']} {w['sets']}×{w['reps']}{weight}\n"
+        for s in sessions:
+            text += f"📅 {s['date']} {s['start_time'] or ''}\n"
+            text += f"{s['exercises']}\n\n"
     else:
         text = "📋 *История тренировок*\n\nПока нет тренировок"
     
