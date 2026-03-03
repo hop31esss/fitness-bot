@@ -17,10 +17,9 @@ from handlers.settings import router as settings_router
 from handlers.premium import router as premium_router
 from handlers.admin_panel import router as admin_panel_router
 from handlers.common import router as common_router
-
-# --- ИМПОРТЫ, КОТОРЫЕ МОГУТ ВЫЗЫВАТЬ ПРОБЛЕМЫ (ЗАКОММЕНТИРОВАНЫ) ---
 from handlers.training import router as training_router
-# from handlers.one_rep_max import router as one_rep_max_router
+from handlers.progress_charts import router as charts_router
+from handlers.one_rep_max import router as one_rep_max_router
 # from handlers.calorie_tracker import router as calorie_tracker_router
 # from handlers.friends import router as friends_router
 # from handlers.ai_advice import router as ai_advice_router
@@ -35,7 +34,7 @@ from handlers.training import router as training_router
 # from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
-from handlers.progress_charts import router as charts_router
+
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -69,6 +68,7 @@ async def main():
         (training_router, "Тренировки"),
         (workout_session_router, "Тренировочные сессии"),
         (charts_router, "Графики прогресса"),
+        (one_rep_max_router, "1ПМ"),
         (common_router, "Общие обработчики"),
     ]
     logger.info(f"charts_router: {charts_router}")
