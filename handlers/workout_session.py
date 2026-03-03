@@ -52,6 +52,8 @@ class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
     entering_exercise_name = State()
     entering_sets = State()
+    entering_set_weights = State()
+    entering_set_reps = State()
     entering_reps = State()
     entering_weight = State()
     entering_duration = State()
@@ -88,12 +90,22 @@ async def show_workout_menu(message, state: FSMContext):
         text += "*Упражнения:*\n"
         for i, ex in enumerate(exercises, 1):
             if ex['type'] == 'strength':
-                weight = f"{ex['weight']} кг" if ex.get('weight') else "б/в"
-                text += f"{i}. {ex['name']}: {ex['sets']}×{ex['reps']} ({weight})\n"
+               if 'weights' in ex and len(ex['weights']) > 1:
+                   # Показываем диапазон весов
+                   weights = [w for w in ex['weights'] if w]
+                   if weights:
+                      min_w = min(weights)
+                      max_w = max(weights)
+                      weight_text = f"{min_w}-{max_w} кг"
+                   else:
+                      weight_text = "б/в"
+               else:
+                    # Старый формат
+                    weight_text = f"{ex.get('weight', 'б/в')} кг" if ex.get('weight') else "б/в"
+            
+               text += f"{i}. {ex['name']}: {ex['sets']}×{ex['reps']} ({weight_text})\n"
             elif ex['type'] == 'cardio':
-                text += f"{i}. {ex['name']}: {ex['duration']} мин, {ex['distance']} км\n"
-    else:
-        text += "Пока нет упражнений. Добавьте первое!\n"
+               text += f"{i}. {ex['name']}: {ex['duration']} мин, {ex['distance']} км\n"
     
     builder = InlineKeyboardBuilder()
     builder.row(
@@ -140,13 +152,162 @@ async def process_exercise_name(message: Message, state: FSMContext):
 
 @router.message(WorkoutSessionStates.entering_sets)
 async def process_sets(message: Message, state: FSMContext):
+    """Обработка подходов - теперь спрашиваем про вес"""
     try:
         sets = int(message.text)
+        if sets <= 0:
+            raise ValueError
         await state.update_data(sets=sets)
-        await message.answer("Введите количество повторений:")
-        await state.set_state(WorkoutSessionStates.entering_reps)
+        
+        # Спрашиваем, хотите ли вводить вес для каждого подхода
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="✅ ОДИН ВЕС", callback_data="weight_one"),
+            InlineKeyboardButton(text="📊 ПО ПОДХОДАМ", callback_data="weight_each")
+        )
+        
+        await message.answer(
+            f"⚖️ *Ввод веса*\n\n"
+            f"У вас {sets} подходов. Как вводить вес?\n\n"
+            f"• Один вес - одинаковый для всех подходов\n"
+            f"• По подходам - разный вес для каждого",
+            reply_markup=builder.as_markup()
+        )
+        await state.set_state(WorkoutSessionStates.choosing_weight_method)
     except ValueError:
         await message.answer("❌ Введите число")
+
+@router.callback_query(F.data == "weight_one")
+async def weight_one_method(callback: CallbackQuery, state: FSMContext):
+    """Ввод одного веса для всех подходов"""
+    await callback.message.edit_text(
+        "⚖️ Введите вес (кг) для всех подходов или '-' если без веса:"
+    )
+    await state.set_state(WorkoutSessionStates.entering_weight)
+    await callback.answer()
+
+@router.callback_query(F.data == "weight_each")
+async def weight_each_method(callback: CallbackQuery, state: FSMContext):
+    """Ввод веса для каждого подхода"""
+    data = await state.get_data()
+    sets = data['sets']
+    
+    await state.update_data(current_set=1, weights=[])
+    await callback.message.edit_text(
+        f"⚖️ *Подход 1 из {sets}*\n\n"
+        f"Введите вес для первого подхода (или '-' без веса):"
+    )
+    await state.set_state(WorkoutSessionStates.entering_set_weights)
+    await callback.answer()
+
+@router.message(WorkoutSessionStates.entering_set_weights)
+async def process_set_weight(message: Message, state: FSMContext):
+    """Обработка веса для текущего подхода"""
+    data = await state.get_data()
+    current_set = data['current_set']
+    total_sets = data['sets']
+    weights = data.get('weights', [])
+    
+    # Сохраняем вес текущего подхода
+    if message.text == '-':
+        weights.append(None)
+    else:
+        try:
+            weight = float(message.text)
+            weights.append(weight)
+        except ValueError:
+            await message.answer("❌ Введите число или '-'")
+            return
+    
+    await state.update_data(weights=weights)
+    
+    # Если есть еще подходы
+    if current_set < total_sets:
+        current_set += 1
+        await state.update_data(current_set=current_set)
+        await message.answer(
+            f"⚖️ *Подход {current_set} из {total_sets}*\n\n"
+            f"Введите вес для {current_set}-го подхода:"
+        )
+    else:
+        # Все веса введены, теперь повторения
+        await state.update_data(weight_method='each')
+        await message.answer(
+            f"🔄 *Повторения*\n\n"
+            f"Введите количество повторений для всех подходов (одинаково):"
+        )
+        await state.set_state(WorkoutSessionStates.entering_reps)
+
+@router.message(WorkoutSessionStates.entering_reps)
+async def process_reps(message: Message, state: FSMContext):
+    """Обработка повторений (одинаковых для всех подходов)"""
+    try:
+        reps = int(message.text)
+        if reps <= 0:
+            raise ValueError
+        await state.update_data(reps=reps)
+        
+        # Проверяем метод ввода веса
+        data = await state.get_data()
+        if data.get('weight_method') == 'each':
+            # Уже есть все веса
+            await save_exercise_with_weights(state, message)
+        else:
+            # Будем вводить один вес
+            await message.answer("⚖️ Введите вес (кг) или '-'")
+            await state.set_state(WorkoutSessionStates.entering_weight)
+            
+    except ValueError:
+        await message.answer("❌ Введите число")
+
+async def save_exercise_with_weights(state: FSMContext, message: Message):
+    """Сохранить упражнение с разными весами по подходам"""
+    data = await state.get_data()
+    
+    exercise = {
+        'name': data['exercise_name'],
+        'type': data['current_exercise_type'],
+        'sets': data['sets'],
+        'reps': data['reps'],
+        'weights': data.get('weights', [])
+    }
+    
+    exercises = data.get('exercises', [])
+    exercises.append(exercise)
+    await state.update_data(exercises=exercises)
+    
+    # Сохраняем в базу (пока упрощенно - сохраняем средний вес)
+    session_id = data['session_id']
+    order_num = len(exercises)
+    
+    # Вычисляем средний вес для отображения
+    weights = [w for w in data.get('weights', []) if w]
+    avg_weight = sum(weights) / len(weights) if weights else None
+    
+    await db.execute("""
+        INSERT INTO workout_exercises 
+        (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, exercise['name'], 'strength', 
+          exercise['sets'], exercise['reps'], avg_weight,
+          order_num))
+    
+    # Показываем детали
+    weight_details = ""
+    if weights:
+        weight_details = "\n*Вес по подходам:*\n"
+        for i, w in enumerate(weights, 1):
+            w_text = f"{w} кг" if w else "б/в"
+            weight_details += f"  {i}. {w_text}\n"
+    
+    await message.answer(
+        f"✅ *Упражнение добавлено!*\n\n"
+        f"🏋️ {exercise['name']}\n"
+        f"📊 {exercise['sets']}×{exercise['reps']}\n"
+        f"{weight_details}"
+    )
+    
+    await show_workout_menu(message, state)
 
 @router.message(WorkoutSessionStates.entering_reps)
 async def process_reps(message: Message, state: FSMContext):
