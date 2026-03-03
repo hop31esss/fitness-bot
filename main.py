@@ -34,6 +34,7 @@ from handlers.training import router as training_router
 # from handlers.daily_routine import router as daily_routine_router
 # from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
+from handlers.progress_charts import router as charts_router
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
 logging.basicConfig(
@@ -65,6 +66,7 @@ async def main():
         (admin_panel_router, "Админ-панель"),
         (training_router, "Тренировки"),
         (workout_session_router, "Тренировочные сессии"),
+        (charts_router, "Графики прогресса"),
         (common_router, "Общие обработчики"),
     ]
 
