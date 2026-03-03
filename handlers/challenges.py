@@ -10,6 +10,173 @@ from config import ADMIN_ID
 
 router = Router()
 
+class ChallengeStates(StatesGroup):
+    choosing_friend = State()
+    entering_name = State()
+    choosing_type = State()
+    entering_exercise = State()
+    entering_goal = State()
+    entering_days = State()
+
+
+@router.callback_query(F.data.startswith("challenge_friend:"))
+async def challenge_friend_chosen(callback: CallbackQuery, state: FSMContext):
+    """Выбор друга для челленджа"""
+    friend_id = int(callback.data.split(":")[1])
+    await state.update_data(friend_id=friend_id)
+    
+    await callback.message.edit_text(
+        "📝 *Название челленджа*\n\n"
+        "Придумайте название для вашего челленджа:\n"
+        "Например: 'Кто больше подтянется'"
+    )
+    await state.set_state(ChallengeStates.entering_name)
+    await callback.answer()
+
+@router.message(ChallengeStates.entering_name)
+async def challenge_enter_name(message: Message, state: FSMContext):
+    """Ввод названия челленджа"""
+    name = message.text.strip()
+    await state.update_data(name=name)
+    
+    text = (
+        "🎯 *Тип челленджа*\n\n"
+        "Выберите, по чему будем соревноваться:\n\n"
+        "1️⃣ Количество тренировок\n"
+        "2️⃣ Общий объем (кг)\n"
+        "3️⃣ Количество подходов\n"
+        "4️⃣ Конкретное упражнение"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="1️⃣ Тренировки", callback_data="challenge_type:workouts"),
+        InlineKeyboardButton(text="2️⃣ Объем", callback_data="challenge_type:volume")
+    )
+    builder.row(
+        InlineKeyboardButton(text="3️⃣ Подходы", callback_data="challenge_type:sets"),
+        InlineKeyboardButton(text="4️⃣ Упражнение", callback_data="challenge_type:exercise")
+    )
+    
+    await message.answer(text, reply_markup=builder.as_markup())
+    await state.set_state(ChallengeStates.choosing_type)
+
+@router.callback_query(F.data.startswith("challenge_type:"))
+async def challenge_choose_type(callback: CallbackQuery, state: FSMContext):
+    """Выбор типа челленджа"""
+    challenge_type = callback.data.split(":")[1]
+    await state.update_data(challenge_type=challenge_type)
+    
+    if challenge_type == "exercise":
+        await callback.message.edit_text(
+            "💪 *Введите упражнение*\n\n"
+            "Например: 'Подтягивания', 'Жим лежа', 'Приседания'"
+        )
+        await state.set_state(ChallengeStates.entering_exercise)
+    else:
+        # Для остальных типов - сразу запрашиваем цель
+        units = {
+            "workouts": "тренировок",
+            "volume": "кг",
+            "sets": "подходов"
+        }
+        unit = units.get(challenge_type, "")
+        await state.update_data(unit=unit)
+        
+        await callback.message.edit_text(
+            f"🎯 *Цель челленджа*\n\n"
+            f"Введите цель (в {unit}):\n"
+            f"Например: 10, 20, 30"
+        )
+        await state.set_state(ChallengeStates.entering_goal)
+    
+    await callback.answer()
+
+@router.message(ChallengeStates.entering_exercise)
+async def challenge_enter_exercise(message: Message, state: FSMContext):
+    """Ввод упражнения для челленджа"""
+    exercise = message.text.strip()
+    await state.update_data(exercise=exercise, unit="раз")
+    
+    await message.answer(
+        f"🎯 *Цель челленджа*\n\n"
+        f"Сколько {exercise} нужно сделать?\n"
+        f"Например: 50, 100, 200"
+    )
+    await state.set_state(ChallengeStates.entering_goal)
+
+@router.message(ChallengeStates.entering_goal)
+async def challenge_enter_goal(message: Message, state: FSMContext):
+    """Ввод цели челленджа"""
+    try:
+        goal = int(message.text)
+        if goal <= 0:
+            raise ValueError
+        await state.update_data(goal=goal)
+        
+        await message.answer(
+            "⏳ *Длительность челленджа*\n\n"
+            "На сколько дней?\n"
+            "Например: 7, 14, 30"
+        )
+        await state.set_state(ChallengeStates.entering_days)
+    except ValueError:
+        await message.answer("❌ Введите положительное число")
+
+@router.message(ChallengeStates.entering_days)
+async def challenge_enter_days(message: Message, state: FSMContext):
+    """Ввод длительности челленджа"""
+    try:
+        days = int(message.text)
+        if days <= 0:
+            raise ValueError
+        
+        data = await state.get_data()
+        user_id = message.from_user.id
+        friend_id = data['friend_id']
+        
+        # Создаем челлендж в базе
+        await db.execute("""
+            INSERT INTO challenges (
+                user1_id, user2_id, name, type, exercise, goal, unit, status, created_at, end_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+        """, (
+            user_id, friend_id,
+            data['name'],
+            data['challenge_type'],
+            data.get('exercise'),
+            data['goal'],
+            data.get('unit', 'раз'),
+            datetime.now().isoformat(),
+            (datetime.now() + timedelta(days=days)).isoformat()
+        ))
+        
+        # Отправляем уведомление другу
+        try:
+            await message.bot.send_message(
+                friend_id,
+                f"⚔️ *Новый челлендж!*\n\n"
+                f"@{message.from_user.username} бросил вам вызов!\n\n"
+                f"🏆 {data['name']}\n"
+                f"🎯 Цель: {data['goal']} {data.get('unit', 'раз')}\n"
+                f"⏳ {days} дней\n\n"
+                f"Примите вызов в разделе 'Челленджи'!"
+            )
+        except:
+            pass
+        
+        await message.answer(
+            "✅ *Челлендж создан!*\n\n"
+            "Удачи в соревновании! 💪",
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="🏆 К ЧЕЛЛЕНДЖАМ", callback_data="challenges_menu")
+            ).as_markup()
+        )
+        await state.clear()
+        
+    except ValueError:
+        await message.answer("❌ Введите положительное число")
+
 # ================ ПРОВЕРКА ПРЕМИУМ ================
 
 async def check_premium_access(user_id: int) -> bool:
