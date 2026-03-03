@@ -15,30 +15,31 @@ async def progress_stats_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     try:
-        # Получаем общую статистику
+        # Получаем данные из user_stats (старая система)
         stats = await db.fetch_one(
             "SELECT * FROM user_stats WHERE user_id = ?",
             (user_id,)
         )
         
-        # Получаем количество тренировок
-        # Считаем тренировки из новой системы (сессии)
-        total_sessions = await db.fetch_one(
+        # Получаем количество сессий (новая система)
+        sessions_result = await db.fetch_one(
             "SELECT COUNT(*) as count FROM workout_sessions WHERE user_id = ?",
             (user_id,)
         )
-        if total_sessions:
-            total_workouts = total_sessions['count']
-        else:
-            total_workouts = 0
-            logger.info("No workout sessions found")
         
+        if sessions_result:
+            total_sessions = sessions_result['count']
+        else:
+            total_sessions = 0
+        
+        # Формируем текст
         if stats:
             text = (
                 f"📈 *Ваш прогресс*\n\n"
-                f"▫️ Всего тренировок: *{total_workouts['count'] if total_workouts else 0}*\n"
+                f"▫️ Всего тренировок (сессий): *{total_sessions}*\n"
                 f"▫️ Текущая серия: *{stats['current_streak']} дней* 🔥\n"
                 f"▫️ Лучшая серия: *{stats['longest_streak']} дней* 🏆\n"
+                f"▫️ Уникальных упражнений: *{stats['total_exercises']}*\n"
             )
             
             if stats['last_workout_date']:
@@ -47,7 +48,7 @@ async def progress_stats_menu(callback: CallbackQuery):
         else:
             text = "📈 *Ваш прогресс*\n\nПока нет данных. Начните тренироваться! 💪"
         
-        # Клавиатура с кнопкой графиков
+        # Клавиатура
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(text="📊 СТАТИСТИКА", callback_data="stats"),
@@ -64,7 +65,7 @@ async def progress_stats_menu(callback: CallbackQuery):
         await callback.message.edit_text(text, reply_markup=builder.as_markup())
         
     except Exception as e:
-        logger.error(f"Ошибка в progress_stats: {e}")
+        logger.error(f"❌ Ошибка в progress_stats: {e}")
         await callback.message.answer("❌ Ошибка загрузки статистики")
     
     await callback.answer()
