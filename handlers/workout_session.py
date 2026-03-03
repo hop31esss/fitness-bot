@@ -12,6 +12,7 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 async def init_workout_tables():
+    """Создание таблиц для тренировок"""
     try:
         await db.execute("""
             CREATE TABLE IF NOT EXISTS workout_sessions (
@@ -47,9 +48,6 @@ async def init_workout_tables():
         logger.error(f"❌ Ошибка создания таблиц: {e}")
         return False
 
-async def init_workout_tables():
-    # ... код функции ...
-
 class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
     entering_exercise_name = State()
@@ -61,6 +59,8 @@ class WorkoutSessionStates(StatesGroup):
 
 @router.callback_query(F.data == "start_workout")
 async def start_workout(callback: CallbackQuery, state: FSMContext):
+    await init_workout_tables()
+    
     user_id = callback.from_user.id
     today = date.today().isoformat()
     current_time = datetime.now().strftime("%H:%M")
