@@ -52,6 +52,7 @@ class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
     entering_exercise_name = State()
     entering_sets = State()
+    choosing_weight_method = State()
     entering_set_weights = State()
     entering_set_reps = State()
     entering_reps = State()
