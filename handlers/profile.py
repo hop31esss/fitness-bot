@@ -6,7 +6,7 @@ from database.base import db
 from services.analytics import get_user_stats, get_workout_history
 from services.export import export_user_data
 from utils.formatters import format_stats
-#import matplotlib.pyplot as plt
+import matplotlib.pyplot as plt
 import io
 from aiogram.types import BufferedInputFile
 import os
@@ -212,6 +212,45 @@ async def show_progress(callback: CallbackQuery):
     )
     
     await callback.message.answer(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+@router.callback_query(F.data == "stats")
+async def show_detailed_stats(callback: CallbackQuery):
+    """Детальная статистика"""
+    user_id = callback.from_user.id
+    
+    # Получаем статистику по упражнениям
+    exercises_stats = await db.fetch_all("""
+        SELECT exercise_name, 
+               COUNT(*) as times,
+               MAX(weight) as max_weight,
+               AVG(weight) as avg_weight
+        FROM workouts 
+        WHERE user_id = ? AND weight IS NOT NULL
+        GROUP BY exercise_name
+        ORDER BY times DESC
+        LIMIT 10
+    """, (user_id,))
+    
+    text = "📊 *Детальная статистика*\n\n"
+    
+    if exercises_stats:
+        text += "*Топ упражнений:*\n"
+        for i, ex in enumerate(exercises_stats, 1):
+            text += f"{i}. {ex['exercise_name']}\n"
+            text += f"   ▫️ Выполнялось: {ex['times']} раз\n"
+            if ex['max_weight']:
+                text += f"   ▫️ Макс. вес: {ex['max_weight']} кг\n"
+                text += f"   ▫️ Сред. вес: {ex['avg_weight']:.1f} кг\n"
+    else:
+        text += "Пока недостаточно данных для статистики."
+    
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="↩️ НАЗАД", callback_data="progress_stats")
+        ).as_markup()
+    )
     await callback.answer()
 
 @router.callback_query(F.data == "export_data")
