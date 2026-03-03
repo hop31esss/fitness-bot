@@ -15,19 +15,18 @@ from handlers.timer import router as timer_router
 from handlers.calendar import router as calendar_router
 from handlers.settings import router as settings_router
 from handlers.premium import router as premium_router
-from handlers.admin_panel import router as admin_panel_router
 from handlers.common import router as common_router
 from handlers.training import router as training_router
 from handlers.progress_charts import router as charts_router
 from handlers.one_rep_max import router as one_rep_max_router
 # from handlers.calorie_tracker import router as calorie_tracker_router
-# from handlers.friends import router as friends_router
+from handlers.friends import router as friends_router
 # from handlers.ai_advice import router as ai_advice_router
 # from handlers.payment import router as payment_router
 # from handlers.stats import router as stats_router
 # from handlers.exercises import router as exercises_router
 # from handlers.recommendations import router as recommendations_router
-# from handlers.challenges import router as challenges_router
+from handlers.challenges import router as challenges_router
 # from handlers.features import router as features_router
 # from handlers.feed import router as feed_router
 # from handlers.daily_routine import router as daily_routine_router
@@ -60,15 +59,16 @@ async def main():
         (progress_stats_router, "Прогресс статистика"),
         (leaderboard_router, "Лидерборды"),
         (achievements_router, "Достижения"),
+        (friends_router, "Друзья"),
         (timer_router, "Таймер"),
         (calendar_router, "Календарь"),
         (settings_router, "Настройки"),
         (premium_router, "Премиум"),
-        (admin_panel_router, "Админ-панель"),
         (training_router, "Тренировки"),
         (workout_session_router, "Тренировочные сессии"),
         (charts_router, "Графики прогресса"),
         (one_rep_max_router, "1ПМ"),
+        (challenges_router, "Челленджи"),
         (common_router, "Общие обработчики"),
     ]
     logger.info(f"charts_router: {charts_router}")
