@@ -9,6 +9,31 @@ import logging
 from database.base import db
 from config import ADMIN_ID
 
+import sqlite3
+from database.base import db
+
+# === ПРОВЕРКА И СОЗДАНИЕ КОЛОНКИ COMPLETED ===
+async def ensure_completed_column():
+    """Проверяет наличие колонки completed и создаёт её при необходимости"""
+    try:
+        # Пробуем выполнить запрос с колонкой completed
+        await db.execute("SELECT completed FROM workout_exercises LIMIT 1")
+        logger.info("✅ Колонка 'completed' уже существует")
+    except Exception as e:
+        if "no such column" in str(e):
+            try:
+                # Добавляем колонку
+                await db.execute("ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE")
+                logger.info("✅ Колонка 'completed' успешно создана")
+            except Exception as alter_error:
+                logger.error(f"❌ Ошибка создания колонки: {alter_error}")
+        else:
+            logger.error(f"❌ Другая ошибка: {e}")
+
+# Вызываем при импорте
+import asyncio
+asyncio.create_task(ensure_completed_column())
+
 router = Router()
 logger = logging.getLogger(__name__)
 
@@ -50,6 +75,7 @@ async def journal_today(callback: CallbackQuery):
     """Тренировки за сегодня"""
     user_id = callback.from_user.id
     today_str = date.today().isoformat()
+    await ensure_completed_column()
     
     # Получаем сегодняшние тренировки
     exercises = await db.fetch_all("""
