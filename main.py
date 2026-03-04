@@ -29,7 +29,7 @@ from handlers.recommendations import router as recommendations_router
 from handlers.challenges import router as challenges_router
 from handlers.feed import router as feed_router
 from handlers.daily_routine import router as daily_routine_router
-from handlers.music import router as music_router
+#from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
 
@@ -69,7 +69,6 @@ async def main():
         (workout_session_router, "Тренировочные сессии"),
         (charts_router, "Графики прогресса"),
         (daily_routine_router, "Режим дня"),
-        (music_router, "Музыка"),
         (payment_router, "Платежи"),
         (exercises_router, "Упражнения"),
         (recommendations_router, "Рекомендации"),
