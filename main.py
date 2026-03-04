@@ -6,7 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from config import BOT_TOKEN, ADMIN_IDS
 from database.base import init_db, close_db
 
-# --- ИМПОРТЫ РОУТЕРОВ (только базовые) ---
+# --- ИМПОРТЫ РОУТЕРОВ  ---
 from handlers.start import router as start_router
 from handlers.profile import router as profile_router
 from handlers.leaderboard import router as leaderboard_router
