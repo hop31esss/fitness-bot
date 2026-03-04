@@ -21,7 +21,7 @@ from handlers.progress_charts import router as charts_router
 from handlers.one_rep_max import router as one_rep_max_router
 from handlers.calorie_tracker import router as calorie_tracker_router
 from handlers.friends import router as friends_router
-# from handlers.ai_advice import router as ai_advice_router
+from handlers.ai_advice import router as ai_advice_router
 # from handlers.payment import router as payment_router
 # from handlers.stats import router as stats_router
 # from handlers.exercises import router as exercises_router
@@ -61,6 +61,7 @@ async def main():
         (achievements_router, "Достижения"),
         (friends_router, "Друзья"),
         (timer_router, "Таймер"),
+        (ai_advice_router, "AI-советы"),
         (calendar_router, "Календарь"),
         (settings_router, "Настройки"),
         (premium_router, "Премиум"),

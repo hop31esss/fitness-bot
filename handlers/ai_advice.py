@@ -1,10 +1,11 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import Command
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, timedelta
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import datetime, timedelta
+
 from database.base import db
 from services.openai_service import openai_service
 from config import ADMIN_ID
@@ -92,8 +93,7 @@ async def ai_daily_tip(callback: CallbackQuery):
     if not await check_premium_access(user_id):
         return
     
-    # Отправляем сообщение о начале генерации
-    await callback.message.edit_text("🤔 *Думаю...* Генерирую персональный совет...")
+    await callback.message.edit_text("🤔 *Думаю...* Анализирую ваши тренировки...")
     
     # Получаем данные пользователя
     user = await db.fetch_one(
@@ -106,20 +106,30 @@ async def ai_daily_tip(callback: CallbackQuery):
         (user_id,)
     )
     
+    # Получаем последние тренировки
+    last_workouts = await db.fetch_all("""
+        SELECT we.exercise_name, we.sets, we.reps, we.weight
+        FROM workout_exercises we
+        JOIN workout_sessions ws ON we.session_id = ws.id
+        WHERE ws.user_id = ?
+        ORDER BY ws.date DESC
+        LIMIT 5
+    """, (user_id,))
+    
     user_data = {
         'first_name': user['first_name'] if user else 'Пользователь',
         'total_workouts': stats['total_workouts'] if stats else 0,
         'current_streak': stats['current_streak'] if stats else 0
     }
     
-    # Получаем совет от OpenAI
-    advice = await openai_service.get_training_advice(user_data)
+    # Получаем совет
+    advice = await openai_service.get_daily_tip(user_data, last_workouts)
     
     if advice:
         text = (
-            f"🤖 *AI-совет на сегодня*\n\n"
+            f"🤖 *Совет на сегодня*\n\n"
             f"{advice}\n\n"
-            f"💡 *Ещё совет?*"
+            f"💪 Хорошей тренировки!"
         )
     else:
         text = (
@@ -150,8 +160,10 @@ async def ai_workout_plan(callback: CallbackQuery):
     
     # Данные пользователя
     user_data = {
-        'experience': 'средний',
-        'goal': 'общая физическая подготовка'
+        'experience': 'intermediate',
+        'goal': 'общая физическая подготовка',
+        'time': '60 минут',
+        'equipment': 'тренажерный зал'
     }
     
     plan = await openai_service.get_workout_plan(user_data)
@@ -184,16 +196,28 @@ async def ai_analyze(callback: CallbackQuery):
     
     # Получаем историю тренировок
     history = await db.fetch_all("""
-        SELECT date(created_at) as date, 
-               COUNT(*) as workout_count,
-               SUM(sets * reps * COALESCE(weight, 1)) as total_volume
-        FROM workouts 
-        WHERE user_id = ? AND created_at > datetime('now', '-30 days')
-        GROUP BY date(created_at)
-        ORDER BY date
+        SELECT 
+            ws.date,
+            we.exercise_name,
+            we.sets,
+            we.reps,
+            we.weight
+        FROM workout_exercises we
+        JOIN workout_sessions ws ON we.session_id = ws.id
+        WHERE ws.user_id = ?
+        ORDER BY ws.date DESC
+        LIMIT 30
     """, (user_id,))
     
-    user_data = {}
+    user = await db.fetch_one(
+        "SELECT first_name FROM users WHERE user_id = ?",
+        (user_id,)
+    )
+    
+    user_data = {
+        'first_name': user['first_name'] if user else 'Пользователь'
+    }
+    
     analysis = await openai_service.analyze_progress(user_data, history)
     
     if analysis:
@@ -245,28 +269,28 @@ async def process_ai_question(message: Message, state: FSMContext):
     
     await message.answer("🤔 *Думаю...* Ищу ответ на ваш вопрос...")
     
-    try:
-        response = openai_service.client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": "system", "content": "Ты профессиональный фитнес-тренер. Отвечай кратко и по делу."},
-                {"role": "user", "content": message.text}
-            ],
-            max_tokens=400,
-            temperature=0.7
-        )
-        
-        answer = response.choices[0].message.content
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="❓ Ещё вопрос", callback_data="ai_ask"),
-            InlineKeyboardButton(text="📋 В меню", callback_data="ai_advice")
-        )
-        
-        await message.answer(f"🤖 *Ответ:*\n\n{answer}", reply_markup=builder.as_markup())
-        
-    except Exception as e:
-        await message.answer(f"❌ Ошибка: {e}")
+    user = await db.fetch_one(
+        "SELECT first_name FROM users WHERE user_id = ?",
+        (user_id,)
+    )
     
+    user_data = {
+        'first_name': user['first_name'] if user else 'Пользователь',
+        'experience': 'intermediate'
+    }
+    
+    answer = await openai_service.answer_question(message.text, user_data)
+    
+    if answer:
+        text = f"🤖 *Ответ:*\n\n{answer}"
+    else:
+        text = "❌ Не удалось получить ответ"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="❓ Ещё вопрос", callback_data="ai_ask"),
+        InlineKeyboardButton(text="📋 В меню", callback_data="ai_advice")
+    )
+    
+    await message.answer(text, reply_markup=builder.as_markup())
     await state.clear()
