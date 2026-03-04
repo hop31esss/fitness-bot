@@ -390,7 +390,8 @@ async def save_exercise(state: FSMContext, message: Message):
         """, (session_id, exercise['name'], 'cardio',
               exercise.get('duration'), exercise.get('distance'),
               order_num))
-
+        
+from services.stats_updater import update_user_stats
 @router.callback_query(F.data == "finish_workout")
 async def finish_workout(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
@@ -405,6 +406,7 @@ async def finish_workout(callback: CallbackQuery, state: FSMContext):
             InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
         ).as_markup()
     )
+    await update_user_stats(callback.from_user.id)
     await state.clear()
     await callback.answer()
 
