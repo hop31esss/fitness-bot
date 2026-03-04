@@ -12,6 +12,75 @@ from database.base import db
 router = Router()
 logger = logging.getLogger(__name__)
 
+# === ПРОВЕРКА И СОЗДАНИЕ ТАБЛИЦ ===
+def ensure_workout_tables():
+    """Создание таблиц для тренировок, если их нет"""
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        
+        # Создаем таблицу тренировок
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_sessions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                date TEXT NOT NULL,
+                start_time TEXT,
+                end_time TEXT,
+                notes TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        
+        # Создаем таблицу упражнений
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_exercises (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id INTEGER NOT NULL,
+                exercise_name TEXT NOT NULL,
+                exercise_type TEXT DEFAULT 'strength',
+                sets INTEGER,
+                reps INTEGER,
+                weight REAL,
+                duration INTEGER,
+                distance REAL,
+                notes TEXT,
+                order_num INTEGER
+            )
+        """)
+        
+        conn.commit()
+        conn.close()
+        logger.info("✅ Таблицы для тренировок созданы/проверены")
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблиц: {e}")
+
+# === ДОБАВЛЕНИЕ КОЛОНКИ COMPLETED ===
+def add_completed_column():
+    """Добавляет колонку completed, если её нет"""
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        
+        # Проверяем существование колонки
+        cursor.execute("PRAGMA table_info(workout_exercises)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'completed' not in columns:
+            cursor.execute("ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE")
+            conn.commit()
+            logger.info("✅ Колонка 'completed' успешно добавлена")
+        else:
+            logger.info("✅ Колонка 'completed' уже существует")
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"❌ Ошибка добавления колонки: {e}")
+
+# Вызываем
+ensure_workout_tables()
+add_completed_column()
+
 # === СИНХРОННАЯ ПРОВЕРКА КОЛОНКИ ===
 def ensure_completed_column_sync():
     """Синхронная проверка и создание колонки completed"""
