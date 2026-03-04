@@ -40,10 +40,9 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
         InlineKeyboardButton(text="📰 ЛЕНТА АКТИВНОСТИ", callback_data="feed")
     )
     
-    # ========== РЕЖИМ ДНЯ И МУЗЫКА ==========
+    # ========== РЕЖИМ ДНЯ ==========
     builder.row(
-        InlineKeyboardButton(text="📅 РЕЖИМ ДНЯ", callback_data="daily_routine"),
-        InlineKeyboardButton(text="🎵 МУЗЫКА", callback_data="music")
+        InlineKeyboardButton(text="📅 РЕЖИМ ДНЯ", callback_data="daily_routine")
     )
     
     # ========== УПРАЖНЕНИЯ И РЕКОМЕНДАЦИИ ==========
