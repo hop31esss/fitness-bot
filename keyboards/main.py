@@ -5,7 +5,7 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     """Красивое главное меню"""
     builder = InlineKeyboardBuilder()
     
-    # ========== ОСНОВНЫЕ ФУНКЦИИ (для всех) ==========
+    # ========== ОСНОВНЫЕ ФУНКЦИИ ==========
     builder.row(
         InlineKeyboardButton(text="📋 ЖУРНАЛ ТРЕНИРОВОК", callback_data="training_journal")
     )
@@ -13,13 +13,9 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     builder.row(
         InlineKeyboardButton(text="📈 ПРОГРЕСС И СТАТИСТИКА", callback_data="progress_stats")
     )
-    builder.row(
-            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
-    )
     
     # ========== ПРЕМИУМ БЛОК ==========
     if is_premium:
-    # Для премиум - показываем сразу премиум-функции
         builder.row(
             InlineKeyboardButton(text="🏋️ 1ПМ КАЛЬКУЛЯТОР", callback_data="one_rep_max")
         )
@@ -30,30 +26,48 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
             InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
             InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")
         )
+        builder.row(
+            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
+        )
     else:
-    # Для обычных - кнопка покупки премиум
         builder.row(
             InlineKeyboardButton(text="👑 ПРЕМИУМ (299₽/мес)", callback_data="show_premium_info")
         )
     
-    # ========== ОБЩИЕ ИНСТРУМЕНТЫ ==========
-    tools_row = []
-    tools_row.append(InlineKeyboardButton(text="⏱️ ТАЙМЕР", callback_data="timer"))
-    tools_row.append(InlineKeyboardButton(text="📅 КАЛЕНДАРЬ", callback_data="calendar"))
-    builder.row(*tools_row)
+    # ========== ДНЕВНИК И ЛЕНТА ==========
+    builder.row(
+        InlineKeyboardButton(text="📔 ДНЕВНИК ТРЕНИРОВОК", callback_data="workout_journal"),
+        InlineKeyboardButton(text="📰 ЛЕНТА АКТИВНОСТИ", callback_data="feed")
+    )
+    
+    # ========== РЕЖИМ ДНЯ И МУЗЫКА ==========
+    builder.row(
+        InlineKeyboardButton(text="📅 РЕЖИМ ДНЯ", callback_data="daily_routine"),
+        InlineKeyboardButton(text="🎵 МУЗЫКА", callback_data="music")
+    )
+    
+    # ========== УПРАЖНЕНИЯ И РЕКОМЕНДАЦИИ ==========
+    builder.row(
+        InlineKeyboardButton(text="💪 УПРАЖНЕНИЯ", callback_data="exercises"),
+        InlineKeyboardButton(text="💡 РЕКОМЕНДАЦИИ", callback_data="recommendations")
+    )
+    
+    # ========== ИНСТРУМЕНТЫ ==========
+    builder.row(
+        InlineKeyboardButton(text="⏱️ ТАЙМЕР", callback_data="timer"),
+        InlineKeyboardButton(text="📅 КАЛЕНДАРЬ", callback_data="calendar")
+    )
     
     # ========== СОЦИАЛЬНОЕ ==========
-    social_row = []
-    social_row.append(InlineKeyboardButton(text="🏆 ЛИДЕРБОРД", callback_data="global_leaderboard"))
-    social_row.append(InlineKeyboardButton(text="🏅 АЧИВКИ", callback_data="achievements"))
-    builder.row(*social_row)
-    
-    # ========== ИНФОРМАЦИЯ ==========
     builder.row(
+        InlineKeyboardButton(text="🏆 ЛИДЕРБОРД", callback_data="global_leaderboard"),
+        InlineKeyboardButton(text="🏅 АЧИВКИ", callback_data="achievements")
+    )
+    
+    # ========== ПЛАТЕЖИ И НАСТРОЙКИ ==========
+    builder.row(
+        InlineKeyboardButton(text="💳 ПЛАТЕЖИ", callback_data="payment"),
         InlineKeyboardButton(text="⚙️ НАСТРОЙКИ", callback_data="settings")
     )
-
-    # ========== АДМИНКА УБРАНА ==========
-    # Доступ только через команду /admin
-
+    
     return builder.as_markup()
