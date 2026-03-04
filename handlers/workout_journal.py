@@ -78,7 +78,7 @@ async def journal_today(callback: CallbackQuery):
     """Тренировки за сегодня"""
     user_id = callback.from_user.id
     today_str = date.today().isoformat()
-    await ensure_completed_column_sync()
+    ensure_completed_column_sync()
     
     # Получаем сегодняшние тренировки
     exercises = await db.fetch_all("""
