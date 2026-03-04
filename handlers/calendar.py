@@ -40,16 +40,18 @@ async def show_calendar(callback: CallbackQuery):
     else:
         current_month_last = datetime(now.year, now.month + 1, 1) - timedelta(days=1)
     
+    # Получаем данные из новой системы (тренировочные сессии)
     workouts = await db.fetch_all("""
         SELECT 
-            date(created_at) as workout_date,
-            COUNT(*) as workout_count,
-            SUM(sets * reps * COALESCE(weight, 1)) as total_volume
-        FROM workouts 
-        WHERE user_id = ? 
-            AND date(created_at) BETWEEN date(?) AND date(?)
-        GROUP BY date(created_at)
-        ORDER BY workout_date
+            ws.date as workout_date,
+            COUNT(we.id) as workout_count,
+            SUM(we.sets * we.reps * COALESCE(we.weight, 1)) as total_volume
+        FROM workout_sessions ws
+        LEFT JOIN workout_exercises we ON ws.id = we.session_id
+        WHERE ws.user_id = ? 
+            AND ws.date BETWEEN ? AND ?
+        GROUP BY ws.date
+        ORDER BY ws.date
     """, (user_id, current_month_first, current_month_last))
     
     # Словарь для быстрого доступа
