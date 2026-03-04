@@ -23,15 +23,13 @@ from handlers.calorie_tracker import router as calorie_tracker_router
 from handlers.friends import router as friends_router
 from handlers.ai_advice import router as ai_advice_router
 from handlers.workout_journal import router as journal_router
-# from handlers.payment import router as payment_router
-# from handlers.stats import router as stats_router
-# from handlers.exercises import router as exercises_router
-# from handlers.recommendations import router as recommendations_router
+from handlers.payment import router as payment_router
+from handlers.exercises import router as exercises_router
+from handlers.recommendations import router as recommendations_router
 from handlers.challenges import router as challenges_router
-# from handlers.features import router as features_router
-# from handlers.feed import router as feed_router
-# from handlers.daily_routine import router as daily_routine_router
-# from handlers.music import router as music_router
+from handlers.feed import router as feed_router
+from handlers.daily_routine import router as daily_routine_router
+from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
 
@@ -70,6 +68,12 @@ async def main():
         (training_router, "Тренировки"),
         (workout_session_router, "Тренировочные сессии"),
         (charts_router, "Графики прогресса"),
+        (daily_routine_router, "Режим дня"),
+        (music_router, "Музыка"),
+        (payment_router, "Платежи"),
+        (exercises_router, "Упражнения"),
+        (recommendations_router, "Рекомендации"),
+        (feed_router, "Лента активности"),
         (one_rep_max_router, "1ПМ"),
         (challenges_router, "Челленджи"),
         (calorie_tracker_router, "Калории"),
