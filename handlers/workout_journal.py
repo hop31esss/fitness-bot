@@ -1,38 +1,41 @@
+import sqlite3
+import logging
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date, timedelta
-import logging
 
 from database.base import db
-from config import ADMIN_ID
 
-import sqlite3
-from database.base import db
+router = Router()
+logger = logging.getLogger(__name__)
 
-# === ПРОВЕРКА И СОЗДАНИЕ КОЛОНКИ COMPLETED ===
-async def ensure_completed_column():
-    """Проверяет наличие колонки completed и создаёт её при необходимости"""
+# === СИНХРОННАЯ ПРОВЕРКА КОЛОНКИ ===
+def ensure_completed_column_sync():
+    """Синхронная проверка и создание колонки completed"""
     try:
-        # Пробуем выполнить запрос с колонкой completed
-        await db.execute("SELECT completed FROM workout_exercises LIMIT 1")
-        logger.info("✅ Колонка 'completed' уже существует")
-    except Exception as e:
-        if "no such column" in str(e):
-            try:
-                # Добавляем колонку
-                await db.execute("ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE")
-                logger.info("✅ Колонка 'completed' успешно создана")
-            except Exception as alter_error:
-                logger.error(f"❌ Ошибка создания колонки: {alter_error}")
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        
+        # Проверяем существование колонки
+        cursor.execute("PRAGMA table_info(workout_exercises)")
+        columns = [col[1] for col in cursor.fetchall()]
+        
+        if 'completed' not in columns:
+            cursor.execute("ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE")
+            conn.commit()
+            logger.info("✅ Колонка 'completed' создана")
         else:
-            logger.error(f"❌ Другая ошибка: {e}")
+            logger.info("✅ Колонка 'completed' уже существует")
+        
+        conn.close()
+    except Exception as e:
+        logger.error(f"❌ Ошибка: {e}")
 
-# Вызываем при импорте
-import asyncio
-asyncio.create_task(ensure_completed_column())
+# Вызываем сразу
+ensure_completed_column_sync()
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -75,7 +78,7 @@ async def journal_today(callback: CallbackQuery):
     """Тренировки за сегодня"""
     user_id = callback.from_user.id
     today_str = date.today().isoformat()
-    await ensure_completed_column()
+    await ensure_completed_column_sync()
     
     # Получаем сегодняшние тренировки
     exercises = await db.fetch_all("""
