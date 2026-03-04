@@ -166,18 +166,19 @@ async def show_day_detail(callback: CallbackQuery):
     user_id = callback.from_user.id
     date_str = callback.data.split(":")[1]
     
-    # Получаем тренировки за этот день
+    # Получаем упражнения из тренировочной сессии за этот день
     workouts = await db.fetch_all("""
         SELECT 
-            exercise_name,
-            sets,
-            reps,
-            weight,
-            created_at
-        FROM workouts 
-        WHERE user_id = ? 
-            AND date(created_at) = date(?)
-        ORDER BY created_at
+            we.exercise_name,
+            we.sets,
+            we.reps,
+            we.weight,
+            ws.start_time as time
+        FROM workout_sessions ws
+        JOIN workout_exercises we ON ws.id = we.session_id
+        WHERE ws.user_id = ? 
+            AND ws.date = ?
+        ORDER BY ws.start_time, we.order_num
     """, (user_id, date_str))
     
     # Получаем общую статистику дня
