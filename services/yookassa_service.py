@@ -1,6 +1,6 @@
 import logging
 from yookassa import Configuration, Payment
-from yookassa.domain.notification import WebhookNotificationEvent, WebhookNotificationFactory
+from yookassa.domain.notification import WebhookNotification
 import uuid
 from typing import Optional, Dict
 
