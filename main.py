@@ -22,6 +22,7 @@ from handlers.one_rep_max import router as one_rep_max_router
 from handlers.calorie_tracker import router as calorie_tracker_router
 from handlers.friends import router as friends_router
 from handlers.ai_advice import router as ai_advice_router
+from handlers.workout_journal import router as journal_router
 # from handlers.payment import router as payment_router
 # from handlers.stats import router as stats_router
 # from handlers.exercises import router as exercises_router
@@ -57,6 +58,7 @@ async def main():
         (start_router, "Стартовые команды"),
         (profile_router, "Профиль"),
         (progress_stats_router, "Прогресс статистика"),
+        (journal_router, "Дневник тренировок"),
         (leaderboard_router, "Лидерборды"),
         (achievements_router, "Достижения"),
         (friends_router, "Друзья"),
