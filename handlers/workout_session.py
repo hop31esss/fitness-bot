@@ -43,6 +43,15 @@ async def init_workout_tables():
             )
         """)
         logger.info("✅ Таблица workout_exercises создана")
+        await db.execute("""
+            ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE
+        """)
+        logger.info("✅ Колонка 'completed' добавлена")
+        
+    except Exception as e:
+        # Если колонка уже существует - игнорируем ошибку
+        if "duplicate column name" not in str(e):
+            logger.error(f"❌ Ошибка: {e}")
         return True
     except Exception as e:
         logger.error(f"❌ Ошибка создания таблиц: {e}")
