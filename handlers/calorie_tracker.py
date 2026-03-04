@@ -4,75 +4,16 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date, timedelta
+import logging
 
 from database.base import db
 from config import ADMIN_ID
 
 router = Router()
+logger = logging.getLogger(__name__)
 
-@router.callback_query(F.data == "calorie_tracker")
-async def calorie_tracker_menu(callback: CallbackQuery):
-    """Главное меню трекера калорий"""
-    user_id = callback.from_user.id
-    
-    print(f"DEBUG: calorie_tracker_menu called by user {user_id}")  # Отладка
-    
-    # ПРОВЕРКА: если это админ - даем доступ
-    if user_id == ADMIN_ID:
-        print(f"DEBUG: Admin access granted")  # Отладка
-        await show_calorie_menu(callback)
-        return
-    
-    # Для всех остальных - проверяем премиум
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    
-    is_premium = False
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            is_premium = True
-    
-    if is_premium:
-        print(f"DEBUG: Premium access granted")  # Отладка
-        await show_calorie_menu(callback)
-    else:
-        print(f"DEBUG: No access for user {user_id}")  # Отладка
-        await callback.answer("❌ Премиум-функция!", show_alert=True)
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
-        )
-        
-        await callback.message.answer(
-            "👑 *Премиум-доступ*\n\n"
-            "Трекер калорий доступен только с премиум-подпиской!\n\n"
-            "💰 299₽/месяц\n\n"
-            "Приобрести можно у администратора: @hop31esss",
-            reply_markup=builder.as_markup()
-        )
+# ================ СОСТОЯНИЯ ================
 
-async def show_calorie_menu(callback: CallbackQuery):
-    """Показать меню трекера"""
-    text = "🔥 *Трекер калорий*\n\nВыберите действие:"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="➕ Добавить еду", callback_data="add_food"),
-        InlineKeyboardButton(text="📊 Моя норма", callback_data="calculate_norm")
-    )
-    builder.row(
-        InlineKeyboardButton(text="📖 База продуктов", callback_data="food_database"),
-        InlineKeyboardButton(text="↩️ В меню", callback_data="back_to_main")
-    )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-# Состояния для FSM
 class CalorieStates(StatesGroup):
     waiting_gender = State()
     waiting_age = State()
@@ -83,119 +24,179 @@ class CalorieStates(StatesGroup):
     waiting_food_name = State()
     waiting_food_calories = State()
     waiting_food_amount = State()
+    waiting_food_protein = State()
+    waiting_food_fat = State()
+    waiting_food_carbs = State()
 
-# База данных продуктов (упрощенная)
+# ================ ПРОВЕРКА ПРЕМИУМ ================
+
+async def check_premium_access(user_id: int) -> bool:
+    """Проверка доступа к премиум-функциям"""
+    if user_id == ADMIN_ID:
+        return True
+    
+    user = await db.fetch_one(
+        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
+        (user_id,)
+    )
+    
+    if user and user['is_subscribed'] and user['subscription_until']:
+        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
+        if datetime.now() <= until:
+            return True
+    
+    return False
+
+# ================ БАЗА ПРОДУКТОВ ================
+
 FOOD_DATABASE = {
     # Завтрак
-    "овсянка": {"calories": 350, "unit": "г", "protein": 12, "fat": 6, "carbs": 60},
-    "гречка": {"calories": 330, "unit": "г", "protein": 13, "fat": 3, "carbs": 68},
-    "рис": {"calories": 360, "unit": "г", "protein": 7, "fat": 1, "carbs": 79},
-    "яйца": {"calories": 155, "unit": "шт", "protein": 13, "fat": 11, "carbs": 1},
-    "омлет": {"calories": 180, "unit": "порция", "protein": 12, "fat": 13, "carbs": 3},
-    "творог": {"calories": 120, "unit": "г", "protein": 18, "fat": 5, "carbs": 3},
-    "йогурт": {"calories": 80, "unit": "г", "protein": 5, "fat": 2, "carbs": 12},
+    "овсянка": {"calories": 350, "protein": 12, "fat": 6, "carbs": 60, "unit": "г"},
+    "гречка": {"calories": 330, "protein": 13, "fat": 3, "carbs": 68, "unit": "г"},
+    "рис": {"calories": 360, "protein": 7, "fat": 1, "carbs": 79, "unit": "г"},
+    "яйца": {"calories": 155, "protein": 13, "fat": 11, "carbs": 1, "unit": "шт"},
+    "творог": {"calories": 120, "protein": 18, "fat": 5, "carbs": 3, "unit": "г"},
     
-    # Обед
-    "курица": {"calories": 165, "unit": "г", "protein": 31, "fat": 3.6, "carbs": 0},
-    "говядина": {"calories": 250, "unit": "г", "protein": 26, "fat": 17, "carbs": 0},
-    "рыба": {"calories": 150, "unit": "г", "protein": 22, "fat": 6, "carbs": 0},
-    "картошка": {"calories": 77, "unit": "г", "protein": 2, "fat": 0.1, "carbs": 17},
-    "макароны": {"calories": 350, "unit": "г", "protein": 13, "fat": 1.5, "carbs": 75},
-    "суп": {"calories": 60, "unit": "мл", "protein": 3, "fat": 2, "carbs": 8},
+    # Мясо
+    "курица": {"calories": 165, "protein": 31, "fat": 3.6, "carbs": 0, "unit": "г"},
+    "говядина": {"calories": 250, "protein": 26, "fat": 17, "carbs": 0, "unit": "г"},
+    "индейка": {"calories": 135, "protein": 29, "fat": 1, "carbs": 0, "unit": "г"},
+    "рыба": {"calories": 150, "protein": 22, "fat": 6, "carbs": 0, "unit": "г"},
     
-    # Ужин
-    "индейка": {"calories": 135, "unit": "г", "protein": 29, "fat": 1, "carbs": 0},
-    "креветки": {"calories": 85, "unit": "г", "protein": 18, "fat": 0.8, "carbs": 0},
-    "салат": {"calories": 30, "unit": "г", "protein": 2, "fat": 0.2, "carbs": 5},
-    "овощи": {"calories": 40, "unit": "г", "protein": 2, "fat": 0.2, "carbs": 8},
+    # Овощи
+    "картофель": {"calories": 77, "protein": 2, "fat": 0.1, "carbs": 17, "unit": "г"},
+    "брокколи": {"calories": 34, "protein": 2.8, "fat": 0.4, "carbs": 6.6, "unit": "г"},
+    "помидоры": {"calories": 20, "protein": 1, "fat": 0.2, "carbs": 4, "unit": "г"},
+    "огурцы": {"calories": 15, "protein": 0.7, "fat": 0.1, "carbs": 3, "unit": "г"},
     
-    # Перекусы
-    "банан": {"calories": 95, "unit": "шт", "protein": 1.3, "fat": 0.3, "carbs": 24},
-    "яблоко": {"calories": 52, "unit": "шт", "protein": 0.3, "fat": 0.2, "carbs": 14},
-    "апельсин": {"calories": 47, "unit": "шт", "protein": 0.9, "fat": 0.1, "carbs": 12},
-    "орехи": {"calories": 600, "unit": "г", "protein": 20, "fat": 50, "carbs": 15},
-    "протеин": {"calories": 120, "unit": "порция", "protein": 25, "fat": 2, "carbs": 3},
-    "батончик": {"calories": 200, "unit": "шт", "protein": 10, "fat": 8, "carbs": 25},
+    # Фрукты
+    "банан": {"calories": 95, "protein": 1.3, "fat": 0.3, "carbs": 24, "unit": "шт"},
+    "яблоко": {"calories": 52, "protein": 0.3, "fat": 0.2, "carbs": 14, "unit": "шт"},
+    "апельсин": {"calories": 47, "protein": 0.9, "fat": 0.1, "carbs": 12, "unit": "шт"},
     
     # Напитки
-    "кофе": {"calories": 2, "unit": "чашка", "protein": 0.1, "fat": 0, "carbs": 0},
-    "чай": {"calories": 1, "unit": "чашка", "protein": 0, "fat": 0, "carbs": 0},
-    "сок": {"calories": 45, "unit": "мл", "protein": 0.5, "fat": 0, "carbs": 11},
-    "вода": {"calories": 0, "unit": "мл", "protein": 0, "fat": 0, "carbs": 0},
+    "кофе": {"calories": 2, "protein": 0.1, "fat": 0, "carbs": 0, "unit": "чашка"},
+    "чай": {"calories": 1, "protein": 0, "fat": 0, "carbs": 0, "unit": "чашка"},
+    "сок": {"calories": 45, "protein": 0.5, "fat": 0, "carbs": 11, "unit": "мл"},
 }
 
 # Коэффициенты активности
 ACTIVITY_LEVELS = {
-    "1.2": {"name": "Минимальная", "desc": "Сидячая работа, нет тренировок"},
-    "1.375": {"name": "Низкая", "desc": "Тренировки 1-3 раза в неделю"},
-    "1.55": {"name": "Средняя", "desc": "Тренировки 3-5 раз в неделю"},
-    "1.725": {"name": "Высокая", "desc": "Тренировки 6-7 раз в неделю"},
-    "1.9": {"name": "Очень высокая", "desc": "Спортсмены, физический труд"}
+    "1.2": {"name": "🪑 Сидячий", "desc": "Офисная работа, нет спорта"},
+    "1.375": {"name": "🚶 Легкий", "desc": "Тренировки 1-3 раза в неделю"},
+    "1.55": {"name": "🏋️ Средний", "desc": "Тренировки 3-5 раз в неделю"},
+    "1.725": {"name": "🔥 Высокий", "desc": "Тренировки 6-7 раз в неделю"},
+    "1.9": {"name": "⚡ Экстра", "desc": "Физическая работа + спорт"}
 }
 
 # Цели
 GOALS = {
-    "lose": {"name": "Похудение", "adjustment": -0.15},
-    "maintain": {"name": "Поддержание", "adjustment": 0},
-    "gain": {"name": "Набор массы", "adjustment": 0.15}
+    "lose": {"name": "⬇️ Похудение", "adjustment": -0.15},
+    "maintain": {"name": "➡️ Поддержание", "adjustment": 0},
+    "gain": {"name": "⬆️ Набор массы", "adjustment": 0.15}
 }
 
-# ================ ГЛАВНОЕ МЕНЮ ТРЕКЕРА ================
+# ================ ГЛАВНОЕ МЕНЮ ================
 
 @router.callback_query(F.data == "calorie_tracker")
 async def calorie_tracker_menu(callback: CallbackQuery):
     """Главное меню трекера калорий"""
     user_id = callback.from_user.id
-    today = date.today().isoformat()
     
-    # Получаем сегодняшние данные
-    today_data = await get_today_calories(user_id, today)
+    # Проверка премиум-доступа
+    if not await check_premium_access(user_id):
+        await callback.answer("❌ Премиум-функция!", show_alert=True)
+        
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
+        )
+        
+        await callback.message.answer(
+            "👑 *Премиум-доступ*\n\n"
+            "Трекер калорий доступен только с премиум-подпиской!\n\n"
+            "💰 299₽/месяц",
+            reply_markup=builder.as_markup()
+        )
+        return
     
-    if today_data:
+    # Получаем данные за сегодня
+    today_date = date.today().isoformat()
+    
+    # Получаем норму пользователя
+    norm = await db.fetch_one(
+        "SELECT calories, protein, fat, carbs FROM calorie_norms WHERE user_id = ?",
+        (user_id,)
+    )
+    
+    # Получаем сегодняшние записи
+    today_entries = await db.fetch_all(
+        """SELECT food_name, amount, unit, calories, protein, fat, carbs 
+           FROM food_entries 
+           WHERE user_id = ? AND date = ? 
+           ORDER BY created_at""",
+        (user_id, today_date)
+    )
+    
+    # Считаем итоги
+    total_calories = sum(e['calories'] for e in today_entries) if today_entries else 0
+    total_protein = sum(e['protein'] or 0 for e in today_entries) if today_entries else 0
+    total_fat = sum(e['fat'] or 0 for e in today_entries) if today_entries else 0
+    total_carbs = sum(e['carbs'] or 0 for e in today_entries) if today_entries else 0
+    
+    # Формируем текст
+    if norm:
+        remaining = norm['calories'] - total_calories
+        remaining_color = "✅" if remaining >= 0 else "⚠️"
+        
         text = (
-            "🔥 *Трекер калорий*\n\n"
-            f"📅 Сегодня: {today_data['date']}\n"
-            f"⚡ Потреблено: {today_data['total']} ккал\n"
-            f"🎯 Норма: {today_data['goal']} ккал\n"
-            f"📊 Осталось: {today_data['remaining']} ккал\n\n"
-            
-            f"🍗 Белки: {today_data['protein']}г\n"
-            f"🥑 Жиры: {today_data['fat']}г\n"
-            f"🍚 Углеводы: {today_data['carbs']}г\n"
+            f"🔥 *Трекер калорий*\n\n"
+            f"📅 *Сегодня:* {today_date}\n"
+            f"⚡ *Потреблено:* {total_calories} ккал\n"
+            f"🎯 *Норма:* {norm['calories']} ккал\n"
+            f"{remaining_color} *Осталось:* {remaining} ккал\n\n"
+            f"🍗 *Белки:* {total_protein:.0f}/{norm['protein']} г\n"
+            f"🥑 *Жиры:* {total_fat:.0f}/{norm['fat']} г\n"
+            f"🍚 *Углеводы:* {total_carbs:.0f}/{norm['carbs']} г\n"
         )
     else:
-        # Нет данных за сегодня
         text = (
-            "🔥 *Трекер калорий*\n\n"
-            "У вас пока нет записей за сегодня.\n\n"
-            "Начните с расчета вашей нормы калорий!"
+            f"🔥 *Трекер калорий*\n\n"
+            f"📅 *Сегодня:* {today_date}\n"
+            f"⚡ *Потреблено:* {total_calories} ккал\n\n"
+            f"📝 У вас еще не рассчитана норма калорий.\n"
+            f"Нажмите '📊 Моя норма' для расчета!"
         )
     
+    if today_entries:
+        text += "\n📋 *Сегодня съедено:*\n"
+        for e in today_entries:
+            text += f"• {e['food_name']}: {e['amount']}{e['unit']} ({e['calories']} ккал)\n"
+    
+    # Клавиатура
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="➕ Добавить еду", callback_data="add_food"),
-        InlineKeyboardButton(text="📊 Моя норма", callback_data="calculate_norm")
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ ЕДУ", callback_data="add_food_menu"),
+        InlineKeyboardButton(text="📊 МОЯ НОРМА", callback_data="calculate_norm")
     )
     builder.row(
-        InlineKeyboardButton(text="📋 История", callback_data="calorie_history"),
-        InlineKeyboardButton(text="📖 База продуктов", callback_data="food_database")
+        InlineKeyboardButton(text="📖 БАЗА ПРОДУКТОВ", callback_data="food_database"),
+        InlineKeyboardButton(text="📊 ИСТОРИЯ", callback_data="calorie_history")
     )
     builder.row(
-        InlineKeyboardButton(text="🔄 Сбросить день", callback_data="reset_day"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="◀️ НАЗАД", callback_data="back_to_main")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
-# ================ РАСЧЕТ НОРМЫ КАЛОРИЙ ================
+# ================ РАСЧЕТ НОРМЫ ================
 
 @router.callback_query(F.data == "calculate_norm")
 async def calculate_norm_start(callback: CallbackQuery, state: FSMContext):
     """Начало расчета нормы калорий"""
-    text = (
-        "📊 *Расчет нормы калорий*\n\n"
-        "Для расчета вашей суточной нормы калорий ответьте на несколько вопросов.\n\n"
+    await callback.message.edit_text(
+        "👤 *Расчет нормы калорий*\n\n"
         "Шаг 1/5: Выберите ваш пол:"
     )
     
@@ -205,11 +206,12 @@ async def calculate_norm_start(callback: CallbackQuery, state: FSMContext):
         InlineKeyboardButton(text="👩 Женский", callback_data="gender:female")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ Отмена", callback_data="calorie_tracker")
+        InlineKeyboardButton(text="↩️ ОТМЕНА", callback_data="calorie_tracker")
     )
     
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.message.edit_reply_markup(reply_markup=builder.as_markup())
     await state.set_state(CalorieStates.waiting_gender)
+    await callback.answer()
 
 @router.callback_query(CalorieStates.waiting_gender, F.data.startswith("gender:"))
 async def process_gender(callback: CallbackQuery, state: FSMContext):
@@ -218,7 +220,7 @@ async def process_gender(callback: CallbackQuery, state: FSMContext):
     await state.update_data(gender=gender)
     
     await callback.message.edit_text(
-        "📊 *Расчет нормы калорий*\n\n"
+        "📅 *Расчет нормы калорий*\n\n"
         "Шаг 2/5: Введите ваш возраст (лет):"
     )
     await state.set_state(CalorieStates.waiting_age)
@@ -228,56 +230,47 @@ async def process_gender(callback: CallbackQuery, state: FSMContext):
 async def process_age(message: Message, state: FSMContext):
     """Обработка возраста"""
     try:
-        age = int(message.text.strip())
+        age = int(message.text)
         if age < 10 or age > 120:
             raise ValueError
-        
         await state.update_data(age=age)
         
         await message.answer(
-            "📊 *Расчет нормы калорий*\n\n"
+            "⚖️ *Расчет нормы калорий*\n\n"
             "Шаг 3/5: Введите ваш вес (кг):"
         )
         await state.set_state(CalorieStates.waiting_weight)
-        
     except ValueError:
-        await message.answer(
-            "❌ Пожалуйста, введите корректный возраст (от 10 до 120 лет):"
-        )
+        await message.answer("❌ Введите корректный возраст (10-120 лет)")
 
 @router.message(CalorieStates.waiting_weight)
 async def process_weight(message: Message, state: FSMContext):
     """Обработка веса"""
     try:
-        weight = float(message.text.strip().replace(',', '.'))
+        weight = float(message.text.replace(',', '.'))
         if weight < 20 or weight > 300:
             raise ValueError
-        
         await state.update_data(weight=weight)
         
         await message.answer(
-            "📊 *Расчет нормы калорий*\n\n"
+            "📏 *Расчет нормы калорий*\n\n"
             "Шаг 4/5: Введите ваш рост (см):"
         )
         await state.set_state(CalorieStates.waiting_height)
-        
     except ValueError:
-        await message.answer(
-            "❌ Пожалуйста, введите корректный вес (от 20 до 300 кг):"
-        )
+        await message.answer("❌ Введите корректный вес (20-300 кг)")
 
 @router.message(CalorieStates.waiting_height)
 async def process_height(message: Message, state: FSMContext):
     """Обработка роста"""
     try:
-        height = float(message.text.strip().replace(',', '.'))
+        height = float(message.text.replace(',', '.'))
         if height < 100 or height > 250:
             raise ValueError
-        
         await state.update_data(height=height)
         
-        text = "📊 *Расчет нормы калорий*\n\n"
-        text += "Шаг 5/5: Выберите уровень физической активности:\n\n"
+        text = "🏃 *Расчет нормы калорий*\n\n"
+        text += "Шаг 5/5: Выберите уровень активности:\n\n"
         
         builder = InlineKeyboardBuilder()
         for coef, data in ACTIVITY_LEVELS.items():
@@ -288,36 +281,33 @@ async def process_height(message: Message, state: FSMContext):
                 )
             )
         builder.row(
-            InlineKeyboardButton(text="↩️ Отмена", callback_data="calorie_tracker")
+            InlineKeyboardButton(text="↩️ ОТМЕНА", callback_data="calorie_tracker")
         )
         
         await message.answer(text, reply_markup=builder.as_markup())
         await state.set_state(CalorieStates.waiting_activity)
-        
     except ValueError:
-        await message.answer(
-            "❌ Пожалуйста, введите корректный рост (от 100 до 250 см):"
-        )
+        await message.answer("❌ Введите корректный рост (100-250 см)")
 
 @router.callback_query(CalorieStates.waiting_activity, F.data.startswith("activity:"))
 async def process_activity(callback: CallbackQuery, state: FSMContext):
-    """Обработка уровня активности"""
+    """Обработка активности"""
     activity = float(callback.data.split(":")[1])
     await state.update_data(activity=activity)
     
-    text = "📊 *Расчет нормы калорий*\n\n"
+    text = "🎯 *Расчет нормы калорий*\n\n"
     text += "Выберите вашу цель:\n\n"
     
     builder = InlineKeyboardBuilder()
     for goal_id, goal_data in GOALS.items():
         builder.row(
             InlineKeyboardButton(
-                text=f"{goal_data['name']}",
+                text=goal_data['name'],
                 callback_data=f"goal:{goal_id}"
             )
         )
     builder.row(
-        InlineKeyboardButton(text="↩️ Отмена", callback_data="calorie_tracker")
+        InlineKeyboardButton(text="↩️ ОТМЕНА", callback_data="calorie_tracker")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -326,12 +316,12 @@ async def process_activity(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(CalorieStates.waiting_goal, F.data.startswith("goal:"))
 async def process_goal(callback: CallbackQuery, state: FSMContext):
-    """Обработка цели и расчет итоговой нормы"""
+    """Расчет и сохранение нормы"""
     goal = callback.data.split(":")[1]
     
     data = await state.get_data()
     
-    # Расчет BMR (базальный метаболизм) по формуле Миффлина-Сан Жеора
+    # Расчет BMR по формуле Миффлина-Сан Жеора
     if data['gender'] == 'male':
         bmr = (10 * data['weight']) + (6.25 * data['height']) - (5 * data['age']) + 5
     else:
@@ -342,119 +332,117 @@ async def process_goal(callback: CallbackQuery, state: FSMContext):
     
     # Учет цели
     goal_adjustment = GOALS[goal]['adjustment']
-    final_calories = tdee * (1 + goal_adjustment)
+    final_calories = int(tdee * (1 + goal_adjustment))
     
     # Расчет БЖУ
-    protein = data['weight'] * 2.0  # 2г на кг веса
-    fat = data['weight'] * 1.0       # 1г на кг веса
-    carbs = (final_calories - (protein * 4 + fat * 9)) / 4
+    protein = int(data['weight'] * 2.0)  # 2г на кг веса
+    fat = int(data['weight'] * 1.0)      # 1г на кг веса
+    carbs = int((final_calories - (protein * 4 + fat * 9)) / 4)
     
-    # Сохраняем в БД
+    # Сохраняем норму
     user_id = callback.from_user.id
-    await save_user_norm(user_id, {
-        'calories': round(final_calories),
-        'protein': round(protein),
-        'fat': round(fat),
-        'carbs': round(carbs),
-        'bmr': round(bmr),
-        'tdee': round(tdee),
-        'goal': goal
-    })
     
-    # Формируем результат
+    await db.execute("""
+        INSERT OR REPLACE INTO calorie_norms 
+        (user_id, calories, protein, fat, carbs, bmr, tdee, goal) 
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    """, (user_id, final_calories, protein, fat, carbs, int(bmr), int(tdee), goal))
+    
     text = (
-        "✅ *Ваша норма калорий рассчитана!*\n\n"
-        f"🎯 Суточная норма: {round(final_calories)} ккал\n\n"
-        
-        f"🍗 Белки: {round(protein)}г ({round(protein * 4)} ккал)\n"
-        f"🥑 Жиры: {round(fat)}г ({round(fat * 9)} ккал)\n"
-        f"🍚 Углеводы: {round(carbs)}г ({round(carbs * 4)} ккал)\n\n"
-        
-        f"📊 Детали расчета:\n"
-        f"• BMR: {round(bmr)} ккал (базальный метаболизм)\n"
-        f"• TDEE: {round(tdee)} ккал (с учетом активности)\n"
+        f"✅ *Ваша норма рассчитана!*\n\n"
+        f"🎯 *Дневная норма:* {final_calories} ккал\n\n"
+        f"🍗 *Белки:* {protein} г ({protein*4} ккал)\n"
+        f"🥑 *Жиры:* {fat} г ({fat*9} ккал)\n"
+        f"🍚 *Углеводы:* {carbs} г ({carbs*4} ккал)\n\n"
+        f"📊 *Детали:*\n"
+        f"• BMR: {int(bmr)} ккал (базальный метаболизм)\n"
+        f"• TDEE: {int(tdee)} ккал (с учетом активности)\n"
         f"• Цель: {GOALS[goal]['name']}\n\n"
-        
-        f"💡 *Совет:* Теперь добавляйте еду в трекер и следите за калориями!"
+        f"Теперь добавляйте еду в трекер!"
     )
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="➕ Добавить еду", callback_data="add_food"),
-        InlineKeyboardButton(text="📊 К трекеру", callback_data="calorie_tracker")
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ ЕДУ", callback_data="add_food_menu"),
+        InlineKeyboardButton(text="📊 К ТРЕКЕРУ", callback_data="calorie_tracker")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await state.clear()
     await callback.answer()
-
+    
 # ================ ДОБАВЛЕНИЕ ЕДЫ ================
 
-@router.callback_query(F.data == "add_food")
+@router.callback_query(F.data == "add_food_menu")
 async def add_food_menu(callback: CallbackQuery, state: FSMContext):
     """Меню добавления еды"""
     text = (
-        "➕ *Добавление еды*\n\n"
-        "Выберите способ добавления:\n\n"
-        "1️⃣ Из базы продуктов\n"
-        "2️⃣ Ввести вручную"
+        "🍎 *Добавление еды*\n\n"
+        "Выберите способ добавления:"
     )
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="📖 Из базы", callback_data="add_from_database"),
-        InlineKeyboardButton(text="✏️ Вручную", callback_data="add_manual")
+        InlineKeyboardButton(text="📖 ИЗ БАЗЫ", callback_data="add_from_db"),
+        InlineKeyboardButton(text="✏️ ВРУЧНУЮ", callback_data="add_manual")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="calorie_tracker")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="calorie_tracker")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
-@router.callback_query(F.data == "add_from_database")
-async def add_from_database(callback: CallbackQuery):
+@router.callback_query(F.data == "add_from_db")
+async def add_from_db(callback: CallbackQuery):
     """Добавление из базы продуктов"""
-    # Группируем продукты по категориям
-    categories = {
-        "Завтрак": ["овсянка", "гречка", "рис", "яйца", "омлет", "творог", "йогурт"],
-        "Обед": ["курица", "говядина", "рыба", "картошка", "макароны", "суп"],
-        "Ужин": ["индейка", "креветки", "салат", "овощи"],
-        "Перекусы": ["банан", "яблоко", "апельсин", "орехи", "протеин", "батончик"],
-        "Напитки": ["кофе", "чай", "сок", "вода"]
-    }
-    
     text = "📖 *База продуктов*\n\nВыберите категорию:"
     
     builder = InlineKeyboardBuilder()
-    for category in categories.keys():
-        builder.row(
-            InlineKeyboardButton(
-                text=f"🍽️ {category}",
-                callback_data=f"food_category:{category}"
-            )
-        )
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="add_food")
+        InlineKeyboardButton(text="🥣 ЗАВТРАК", callback_data="food_cat:breakfast"),
+        InlineKeyboardButton(text="🥩 МЯСО", callback_data="food_cat:meat")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🥬 ОВОЩИ", callback_data="food_cat:veg"),
+        InlineKeyboardButton(text="🍎 ФРУКТЫ", callback_data="food_cat:fruit")
+    )
+    builder.row(
+        InlineKeyboardButton(text="☕ НАПИТКИ", callback_data="food_cat:drinks"),
+        InlineKeyboardButton(text="🍚 КРУПЫ", callback_data="food_cat:grains")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="add_food_menu")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
-@router.callback_query(F.data.startswith("food_category:"))
-async def show_food_category(callback: CallbackQuery):
+@router.callback_query(F.data.startswith("food_cat:"))
+async def show_category(callback: CallbackQuery):
     """Показать продукты в категории"""
     category = callback.data.split(":")[1]
     
+    # Категории продуктов
     categories = {
-        "Завтрак": ["овсянка", "гречка", "рис", "яйца", "омлет", "творог", "йогурт"],
-        "Обед": ["курица", "говядина", "рыба", "картошка", "макароны", "суп"],
-        "Ужин": ["индейка", "креветки", "салат", "овощи"],
-        "Перекусы": ["банан", "яблоко", "апельсин", "орехи", "протеин", "батончик"],
-        "Напитки": ["кофе", "чай", "сок", "вода"]
+        "breakfast": ["овсянка", "гречка", "яйца", "творог"],
+        "meat": ["курица", "говядина", "индейка", "рыба"],
+        "veg": ["картофель", "брокколи", "помидоры", "огурцы"],
+        "fruit": ["банан", "яблоко", "апельсин"],
+        "drinks": ["кофе", "чай", "сок"],
+        "grains": ["рис", "гречка", "овсянка"]
     }
     
-    text = f"🍽️ *{category}*\n\nВыберите продукт:"
+    category_names = {
+        "breakfast": "🥣 Завтрак",
+        "meat": "🥩 Мясо",
+        "veg": "🥬 Овощи",
+        "fruit": "🍎 Фрукты",
+        "drinks": "☕ Напитки",
+        "grains": "🍚 Крупы"
+    }
+    
+    text = f"📖 *{category_names[category]}*\n\nВыберите продукт:"
     
     builder = InlineKeyboardBuilder()
     for food in categories[category]:
@@ -467,7 +455,7 @@ async def show_food_category(callback: CallbackQuery):
                 )
             )
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="add_from_database")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="add_from_db")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -483,12 +471,12 @@ async def select_food(callback: CallbackQuery, state: FSMContext):
     data = FOOD_DATABASE[food]
     
     text = (
-        f"✅ Выбран продукт: *{food.title()}*\n\n"
-        f"📊 На 100{data['unit']}:\n"
+        f"✅ Выбран: *{food.title()}*\n\n"
+        f"📊 *На 100{data['unit']}:*\n"
         f"• Калории: {data['calories']} ккал\n"
-        f"• Белки: {data['protein']}г\n"
-        f"• Жиры: {data['fat']}г\n"
-        f"• Углеводы: {data['carbs']}г\n\n"
+        f"• Белки: {data['protein']} г\n"
+        f"• Жиры: {data['fat']} г\n"
+        f"• Углеводы: {data['carbs']} г\n\n"
         f"Введите количество (в {data['unit']}):"
     )
     
@@ -496,141 +484,185 @@ async def select_food(callback: CallbackQuery, state: FSMContext):
     await state.set_state(CalorieStates.waiting_food_amount)
     await callback.answer()
 
+@router.callback_query(F.data == "add_manual")
+async def add_manual(callback: CallbackQuery, state: FSMContext):
+    """Ручное добавление еды"""
+    await callback.message.edit_text(
+        "✏️ *Ручное добавление*\n\n"
+        "Введите название продукта:"
+    )
+    await state.set_state(CalorieStates.waiting_food_name)
+    await callback.answer()
+
+@router.message(CalorieStates.waiting_food_name)
+async def process_food_name(message: Message, state: FSMContext):
+    """Обработка названия продукта"""
+    food_name = message.text.strip()
+    await state.update_data(food_name=food_name)
+    
+    await message.answer(
+        "⚖️ Введите калорийность на 100г (ккал):"
+    )
+    await state.set_state(CalorieStates.waiting_food_calories)
+
+@router.message(CalorieStates.waiting_food_calories)
+async def process_food_calories(message: Message, state: FSMContext):
+    """Обработка калорийности"""
+    try:
+        calories = int(message.text)
+        if calories <= 0:
+            raise ValueError
+        await state.update_data(calories=calories)
+        
+        await message.answer(
+            "🥩 Введите количество белков на 100г (г):"
+        )
+        await state.set_state(CalorieStates.waiting_food_protein)
+    except ValueError:
+        await message.answer("❌ Введите положительное число")
+
+@router.message(CalorieStates.waiting_food_protein)
+async def process_food_protein(message: Message, state: FSMContext):
+    """Обработка белков"""
+    try:
+        protein = float(message.text.replace(',', '.'))
+        if protein < 0:
+            raise ValueError
+        await state.update_data(protein=protein)
+        
+        await message.answer(
+            "🥑 Введите количество жиров на 100г (г):"
+        )
+        await state.set_state(CalorieStates.waiting_food_fat)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
+@router.message(CalorieStates.waiting_food_fat)
+async def process_food_fat(message: Message, state: FSMContext):
+    """Обработка жиров"""
+    try:
+        fat = float(message.text.replace(',', '.'))
+        if fat < 0:
+            raise ValueError
+        await state.update_data(fat=fat)
+        
+        await message.answer(
+            "🍚 Введите количество углеводов на 100г (г):"
+        )
+        await state.set_state(CalorieStates.waiting_food_carbs)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
+@router.message(CalorieStates.waiting_food_carbs)
+async def process_food_carbs(message: Message, state: FSMContext):
+    """Обработка углеводов"""
+    try:
+        carbs = float(message.text.replace(',', '.'))
+        if carbs < 0:
+            raise ValueError
+        await state.update_data(carbs=carbs)
+        
+        await message.answer(
+            "⚖️ Введите количество съеденного (в граммах):"
+        )
+        await state.update_data(unit="г")
+        await state.set_state(CalorieStates.waiting_food_amount)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
 @router.message(CalorieStates.waiting_food_amount)
 async def process_food_amount(message: Message, state: FSMContext):
-    """Обработка количества продукта"""
+    """Обработка количества"""
     try:
-        amount = float(message.text.strip().replace(',', '.'))
+        amount = float(message.text.replace(',', '.'))
         if amount <= 0:
             raise ValueError
         
         data = await state.get_data()
-        food = data['selected_food']
-        food_data = FOOD_DATABASE[food]
-        
-        # Расчет калорий и БЖУ
-        multiplier = amount / 100
-        calories = round(food_data['calories'] * multiplier)
-        protein = round(food_data['protein'] * multiplier, 1)
-        fat = round(food_data['fat'] * multiplier, 1)
-        carbs = round(food_data['carbs'] * multiplier, 1)
-        
-        # Сохраняем запись о еде
         user_id = message.from_user.id
         today = date.today().isoformat()
         
-        await save_food_entry(user_id, today, {
-            'food': food,
-            'amount': amount,
-            'unit': food_data['unit'],
-            'calories': calories,
-            'protein': protein,
-            'fat': fat,
-            'carbs': carbs
-        })
+        if 'selected_food' in data:
+            # Из базы
+            food = data['selected_food']
+            food_data = FOOD_DATABASE[food]
+            multiplier = amount / 100
+            
+            calories = int(food_data['calories'] * multiplier)
+            protein = round(food_data['protein'] * multiplier, 1)
+            fat = round(food_data['fat'] * multiplier, 1)
+            carbs = round(food_data['carbs'] * multiplier, 1)
+            unit = food_data['unit']
+            food_name = food
+            
+        else:
+            # Ручной ввод
+            multiplier = amount / 100
+            calories = int(data['calories'] * multiplier)
+            protein = round(data['protein'] * multiplier, 1)
+            fat = round(data['fat'] * multiplier, 1)
+            carbs = round(data['carbs'] * multiplier, 1)
+            unit = data['unit']
+            food_name = data['food_name']
         
-        # Подтверждение
+        # Сохраняем запись
+        await db.execute("""
+            INSERT INTO food_entries 
+            (user_id, date, food_name, amount, unit, calories, protein, fat, carbs) 
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, (user_id, today, food_name, amount, unit, calories, protein, fat, carbs))
+        
         text = (
             f"✅ *Еда добавлена!*\n\n"
-            f"🍽️ {food.title()}: {amount}{food_data['unit']}\n"
+            f"🍽️ *{food_name}*\n"
             f"⚡ Калории: {calories} ккал\n"
-            f"🍗 Белки: {protein}г\n"
-            f"🥑 Жиры: {fat}г\n"
-            f"🍚 Углеводы: {carbs}г\n\n"
-            f"Хотите добавить еще?"
+            f"🍗 Белки: {protein} г\n"
+            f"🥑 Жиры: {fat} г\n"
+            f"🍚 Углеводы: {carbs} г\n"
         )
         
         builder = InlineKeyboardBuilder()
         builder.row(
-            InlineKeyboardButton(text="➕ Еще", callback_data="add_food"),
-            InlineKeyboardButton(text="📊 К трекеру", callback_data="calorie_tracker")
+            InlineKeyboardButton(text="➕ ЕЩЁ", callback_data="add_food_menu"),
+            InlineKeyboardButton(text="📊 К ТРЕКЕРУ", callback_data="calorie_tracker")
         )
         
         await message.answer(text, reply_markup=builder.as_markup())
         await state.clear()
         
     except ValueError:
-        await message.answer(
-            "❌ Пожалуйста, введите корректное количество:"
-        )
+        await message.answer("❌ Введите корректное количество")
 
-# ================ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ================
+# ================ ИСТОРИЯ ================
 
-async def get_today_calories(user_id: int, date_str: str):
-    """Получить данные о калориях за сегодня"""
-    # В реальном проекте здесь должен быть запрос к БД
-    # Пока возвращаем заглушку
-    return None
-
-async def save_user_norm(user_id: int, norm_data: dict):
-    """Сохранить норму калорий пользователя"""
-    # Здесь будет сохранение в БД
-    pass
-
-async def save_food_entry(user_id: int, date_str: str, food_data: dict):
-    """Сохранить запись о еде"""
-    # Здесь будет сохранение в БД
-    pass
-
-# Заглушки для остальных функций
 @router.callback_query(F.data == "calorie_history")
 async def calorie_history(callback: CallbackQuery):
-    """История калорий"""
-    text = (
-        "📋 *История калорий*\n\n"
-        "Функция будет доступна в следующем обновлении!"
-    )
+    """История питания"""
+    user_id = callback.from_user.id
+    
+    # Получаем последние 7 дней
+    end_date = date.today()
+    start_date = end_date - timedelta(days=7)
+    
+    history = await db.fetch_all("""
+        SELECT date, SUM(calories) as total_calories, COUNT(*) as items
+        FROM food_entries
+        WHERE user_id = ? AND date BETWEEN ? AND ?
+        GROUP BY date
+        ORDER BY date DESC
+    """, (user_id, start_date.isoformat(), end_date.isoformat()))
+    
+    if not history:
+        text = "📊 *История питания*\n\nПока нет записей о еде."
+    else:
+        text = "📊 *История питания (7 дней)*\n\n"
+        for day in history:
+            text += f"📅 {day['date']}: {day['total_calories']} ккал ({day['items']} продуктов)\n"
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="calorie_tracker")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="calorie_tracker")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-@router.callback_query(F.data == "food_database")
-async def food_database(callback: CallbackQuery):
-    """База продуктов"""
-    text = (
-        "📖 *База продуктов*\n\n"
-        "В базе {len(FOOD_DATABASE)} продуктов.\n\n"
-        "Используйте 'Добавить еду' → 'Из базы' для выбора."
-    )
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="➕ Добавить еду", callback_data="add_food"),
-        InlineKeyboardButton(text="↩️ Назад", callback_data="calorie_tracker")
-    )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-@router.callback_query(F.data == "reset_day")
-async def reset_day(callback: CallbackQuery):
-    """Сбросить данные за день"""
-    text = (
-        "🔄 *Сброс дня*\n\n"
-        "Вы уверены? Все данные за сегодня будут удалены."
-    )
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="✅ Да, сбросить", callback_data="confirm_reset_day"),
-        InlineKeyboardButton(text="❌ Нет", callback_data="calorie_tracker")
-    )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-@router.callback_query(F.data == "confirm_reset_day")
-async def confirm_reset_day(callback: CallbackQuery):
-    """Подтверждение сброса дня"""
-    await callback.message.edit_text(
-        "✅ Данные за сегодня сброшены!",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="📊 К трекеру", callback_data="calorie_tracker")
-        ).as_markup()
-    )
-    await callback.answer()
+    await callback.answer()    
