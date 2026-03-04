@@ -49,14 +49,11 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     builder.row(*social_row)
     
     # ========== ИНФОРМАЦИЯ ==========
-    info_row = []
-    info_row.append(InlineKeyboardButton(text="⚙️ НАСТРОЙКИ", callback_data="settings"))
-    builder.row(*info_row)
-    
-    # ========== АДМИНКА (только для вас) ==========
-    if user_id == 385450652:  # Ваш ID
-        builder.row(
-            InlineKeyboardButton(text="🔧 АДМИН-ПАНЕЛЬ", callback_data="admin_panel")
-        )
-    
+    builder.row(
+        InlineKeyboardButton(text="⚙️ НАСТРОЙКИ", callback_data="settings")
+    )
+
+    # ========== АДМИНКА УБРАНА ==========
+    # Доступ только через команду /admin
+
     return builder.as_markup()
