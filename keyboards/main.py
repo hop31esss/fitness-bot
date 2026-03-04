@@ -13,6 +13,9 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     builder.row(
         InlineKeyboardButton(text="📈 ПРОГРЕСС И СТАТИСТИКА", callback_data="progress_stats")
     )
+    builder.row(
+            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
+    )
     
     # ========== ПРЕМИУМ БЛОК ==========
     if is_premium:
@@ -26,10 +29,6 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
         builder.row(
             InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
             InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")
-        )
-    # ДОБАВЬТЕ ЭТУ СТРОКУ:
-        builder.row(
-            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
         )
     else:
     # Для обычных - кнопка покупки премиум
