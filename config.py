@@ -23,7 +23,7 @@ SUBSCRIPTION_DAYS = 30  # Дней действует подписка
 # Настройки ЮKassa
 YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1283021")  # из личного кабинета ЮKassa
 YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "live_Ih5mldGYVTSFw0rbi1ASoxjP7DqY9HryMTSq6WbR5yA")  # из личного кабинета
-YOOKASSA_PROVIDER_TOKEN = os.getenv("YOOKASSA_PROVIDER_TOKEN", "токен_от_botfather")  # от @BotFather
+YOOKASSA_PROVIDER_TOKEN = os.getenv("YOOKASSA_PROVIDER_TOKEN", "390540012:LIVE:90312")  # от @BotFather
 
 # Настройки базы данных
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///fitness_bot.db")
