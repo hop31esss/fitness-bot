@@ -152,7 +152,7 @@ async def journal_today(callback: CallbackQuery):
     # Получаем сегодняшние тренировки
     exercises = await db.fetch_all("""
         SELECT we.id, we.exercise_name, we.sets, we.reps, we.weight, 
-               we.completed, ws.start_time
+               ws.start_time
         FROM workout_exercises we
         JOIN workout_sessions ws ON we.session_id = ws.id
         WHERE ws.user_id = ? AND ws.date = ?
@@ -170,18 +170,16 @@ async def journal_today(callback: CallbackQuery):
         text = f"📅 *Сегодня ({today_str})*\n\n"
         
         for ex in exercises:
-            status = "✅" if ex['completed'] else "⭕"
             weight = f"{ex['weight']} кг" if ex['weight'] else "б/в"
-            text += f"{status} *{ex['exercise_name']}*\n"
+            text += f"*{ex['exercise_name']}*\n"
             text += f"   {ex['sets']}×{ex['reps']} ({weight})\n"
         
         builder = InlineKeyboardBuilder()
         for ex in exercises:
-            status_emoji = "✅" if ex['completed'] else "⭕"
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{status_emoji} {ex['exercise_name'][:15]}",
-                    callback_data=f"edit_exercise:{ex['id']}"
+                   text=f"✏️ {ex['exercise_name'][:15]}",
+                   callback_data=f"edit_exercise:{ex['id']}"
                 )
             )
         builder.row(
@@ -208,7 +206,7 @@ async def journal_week(callback: CallbackQuery):
             ws.date,
             COUNT(we.id) as exercises_count,
             SUM(we.sets * we.reps * COALESCE(we.weight, 1)) as total_volume,
-            SUM(CASE WHEN we.completed THEN 1 ELSE 0 END) as completed_count
+            0 as completed_count  -- временно отключаем
         FROM workout_sessions ws
         LEFT JOIN workout_exercises we ON ws.id = we.session_id
         WHERE ws.user_id = ? AND ws.date BETWEEN ? AND ?
@@ -300,7 +298,7 @@ async def journal_show_date(callback: CallbackQuery):
     # Получаем тренировки за выбранную дату
     exercises = await db.fetch_all("""
         SELECT we.id, we.exercise_name, we.sets, we.reps, we.weight, 
-               we.completed, ws.start_time
+               ws.start_time
         FROM workout_exercises we
         JOIN workout_sessions ws ON we.session_id = ws.id
         WHERE ws.user_id = ? AND ws.date = ?
@@ -315,18 +313,16 @@ async def journal_show_date(callback: CallbackQuery):
         text = f"📅 *{day_name}, {selected_date}*\n\n"
         
         for ex in exercises:
-            status = "✅" if ex['completed'] else "⭕"
             weight = f"{ex['weight']} кг" if ex['weight'] else "б/в"
-            text += f"{status} *{ex['exercise_name']}*\n"
+            text += f"*{ex['exercise_name']}*\n"
             text += f"   {ex['sets']}×{ex['reps']} ({weight})\n"
         
         builder = InlineKeyboardBuilder()
         for ex in exercises:
-            status_emoji = "✅" if ex['completed'] else "⭕"
             builder.row(
                 InlineKeyboardButton(
-                    text=f"{status_emoji} {ex['exercise_name'][:15]}",
-                    callback_data=f"edit_exercise:{ex['id']}"
+                   text=f"✏️ {ex['exercise_name'][:15]}",
+                   callback_data=f"edit_exercise:{ex['id']}"
                 )
             )
         builder.row(
