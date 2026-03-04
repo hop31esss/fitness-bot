@@ -50,7 +50,6 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     
     # ========== ИНФОРМАЦИЯ ==========
     info_row = []
-    info_row.append(InlineKeyboardButton(text="ℹ️ О БОТЕ", callback_data="bot_features"))
     info_row.append(InlineKeyboardButton(text="⚙️ НАСТРОЙКИ", callback_data="settings"))
     builder.row(*info_row)
     
