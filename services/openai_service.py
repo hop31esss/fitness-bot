@@ -39,7 +39,7 @@ class OpenAIService:
                 for w in last_workouts[:3]:
                     recent_exercises.append(f"{w.get('exercise_name')} - {w.get('sets')}×{w.get('reps')} ({w.get('weight', 'б/в')} кг)")
             
-            exercises_text = "\n".join(recent_exercises) if recent_exiles else "нет данных"
+            exercises_text = "\n".join(recent_exercises) if recent_exercises else "нет данных"
             
             prompt = f"""Ты — профессиональный персональный тренер с 10-летним стажем. Твой клиент {name}.
 
