@@ -6,6 +6,7 @@ from aiogram.filters import Command
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.types import InlineKeyboardButton
 from config import BOT_TOKEN, ADMIN_IDS
+from aiogram.types import Message
 from database.base import init_db, close_db
 
 # --- ИМПОРТЫ РОУТЕРОВ  ---
