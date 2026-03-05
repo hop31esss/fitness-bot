@@ -49,15 +49,19 @@ async def main():
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # ПРЯМОЙ ОБРАБОТЧИК ДЛЯ /admin (ДОБАВЬТЕ ЭТОТ КОД)
+    # ПРЯМОЙ ОБРАБОТЧИК ДЛЯ /admin С ОТЛАДКОЙ
     @dp.message(Command("admin"))
     async def admin_command_handler(message: Message):
         """Прямой обработчик команды admin"""
         user_id = message.from_user.id
         ADMIN_ID = 385450652  # Ваш ID
     
+        # Отладка
+        print(f"🔍 Команда /admin от пользователя {user_id}")
+        logger.info(f"🔍 Команда /admin от пользователя {user_id}")
+    
         if user_id != ADMIN_ID:
-            await message.answer("❌ У вас нет доступа")
+            await message.answer(f"❌ У вас нет доступа. Ваш ID: {user_id}")
             return
     
         text = (
