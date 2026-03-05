@@ -2,7 +2,9 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
-
+from aiogram.filters import Command
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.types import InlineKeyboardButton
 from config import BOT_TOKEN, ADMIN_IDS
 from database.base import init_db, close_db
 
@@ -46,6 +48,42 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+
+    # ПРЯМОЙ ОБРАБОТЧИК ДЛЯ /admin (ДОБАВЬТЕ ЭТОТ КОД)
+    @dp.message(Command("admin"))
+    async def admin_command_handler(message: Message):
+        """Прямой обработчик команды admin"""
+        user_id = message.from_user.id
+        ADMIN_ID = 385450652  # Ваш ID
+    
+        if user_id != ADMIN_ID:
+            await message.answer("❌ У вас нет доступа")
+            return
+    
+        text = (
+            "⚙️ *АДМИН-ПАНЕЛЬ*\n\n"
+            "👑 Добро пожаловать, администратор!\n\n"
+            "*Доступные действия:*\n"
+            "📊 • Статистика бота\n"
+            "👥 • Список пользователей\n"
+            "👑 • Управление премиум\n"
+            "📢 • Рассылка"
+        )
+    
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+        )
+        builder.row(
+            InlineKeyboardButton(text="👑 Премиум", callback_data="admin_premium_menu"),
+            InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast_menu")
+        )
+        builder.row(
+            InlineKeyboardButton(text="👋 Выход", callback_data="back_to_main")
+        )
+    
+        await message.answer(text, reply_markup=builder.as_markup())
 
     # Инициализация базы данных (создаст ТОЛЬКО основные таблицы)
     await init_db()
