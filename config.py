@@ -10,6 +10,9 @@ ADMIN_ID = 385450652
 # Список администраторов (для совместимости)
 ADMIN_IDS = [385450652]
 
+# Часовой пояс сервера (например 'Europe/Moscow', 'Asia/Yekaterinburg', 'UTC')
+SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "Europe/Moscow")
+
 # Список друзей с премиум-доступом
 PREMIUM_FRIENDS = [
     # Добавляйте сюда ID друзей
