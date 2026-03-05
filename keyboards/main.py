@@ -13,9 +13,6 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     builder.row(
         InlineKeyboardButton(text="📈 ПРОГРЕСС И СТАТИСТИКА", callback_data="progress_stats")
     )
-    builder.row(
-            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
-    )
     
     # ========== ПРЕМИУМ БЛОК ==========
     if is_premium:
@@ -43,6 +40,9 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     # ========== РЕЖИМ ДНЯ ==========
     builder.row(
         InlineKeyboardButton(text="📅 РЕЖИМ ДНЯ", callback_data="daily_routine")
+    )
+    builder.row(
+            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
     )
     
     # ========== УПРАЖНЕНИЯ И РЕКОМЕНДАЦИИ ==========
