@@ -45,10 +45,11 @@ def get_admin_back_keyboard():
 
 @router.message(Command("admin"))
 async def admin_panel(message: Message):
-    """Вход в админ-панель (только для админа)"""
+    """Вход в админ-панель по команде"""
     user_id = message.from_user.id
     
-    if user_id != ADMIN_USER_ID:
+    # Проверяем, является ли пользователь админом
+    if user_id != ADMIN_ID:
         await message.answer("❌ У вас нет доступа к админ-панели.")
         return
     
