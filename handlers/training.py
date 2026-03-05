@@ -70,6 +70,39 @@ async def process_exercise_name(message: Message, state: FSMContext):
     )
     await state.set_state(AddExerciseStates.waiting_exercise_alias)
 
+@router.callback_query(F.data == "my_exercises")
+async def my_exercises(callback: CallbackQuery):
+    """Мои упражнения - список упражнений пользователя"""
+    user_id = callback.from_user.id
+    
+    # Получаем список упражнений пользователя
+    exercises = await db.fetch_all(
+        "SELECT name, alias FROM exercises WHERE user_id = ? ORDER BY name",
+        (user_id,)
+    )
+    
+    if exercises:
+        text = "💪 *Мои упражнения:*\n\n"
+        for i, ex in enumerate(exercises, 1):
+            alias = f" ({ex['alias']})" if ex['alias'] else ""
+            text += f"{i}. {ex['name']}{alias}\n"
+        text += f"\n📊 Всего упражнений: {len(exercises)}"
+    else:
+        text = "📝 *Мои упражнения*\n\nУ вас пока нет сохраненных упражнений.\n\nДобавьте первое упражнение!"
+    
+    # Клавиатура
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ", callback_data="add_exercise"),
+        InlineKeyboardButton(text="🔤 АЛИАСЫ", callback_data="exercise_aliases")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="training_journal")
+    )
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
 @router.message(AddExerciseStates.waiting_exercise_alias)
 async def process_exercise_alias(message: Message, state: FSMContext):
     """Обработка алиаса упражнения"""
