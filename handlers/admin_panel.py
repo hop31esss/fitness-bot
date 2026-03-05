@@ -28,20 +28,6 @@ class PremiumGrantStates(StatesGroup):
     waiting_user_id = State()
     waiting_days = State()
 
-@router.message(Command("admin"))
-async def admin_panel(message: Message):
-    """Вход в админ-панель"""
-    user_id = message.from_user.id
-    logger.info(f"🔍 admin_panel вызвана пользователем {user_id}")
-    
-    if user_id != ADMIN_ID:
-        logger.warning(f"❌ Доступ запрещён для {user_id}")
-        await message.answer("❌ У вас нет доступа к админ-панели.")
-        return
-    
-    logger.info(f"✅ Доступ разрешён для {user_id}")
-    # ... остальной код ...
-
 # ================ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ================
 
 def get_broadcast_confirmation_keyboard():
@@ -65,10 +51,14 @@ def get_admin_back_keyboard():
 async def admin_panel(message: Message):
     """Вход в админ-панель"""
     user_id = message.from_user.id
+    logger.info(f"🔍 admin_panel вызвана пользователем {user_id}")
     
     if user_id != ADMIN_ID:
+        logger.warning(f"❌ Доступ запрещён для {user_id}")
         await message.answer("❌ У вас нет доступа к админ-панели.")
         return
+    
+    logger.info(f"✅ Доступ разрешён для {user_id}")
     
     text = (
         "⚙️ *АДМИН-ПАНЕЛЬ*\n\n"
