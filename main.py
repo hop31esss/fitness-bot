@@ -51,44 +51,44 @@ async def main():
     dp = Dispatcher(storage=storage)
 
     # ПРЯМОЙ ОБРАБОТЧИК ДЛЯ /admin С ОТЛАДКОЙ
-    @dp.message(Command("admin"))
-    async def admin_command_handler(message: Message):
-        """Прямой обработчик команды admin"""
-        user_id = message.from_user.id
-        ADMIN_ID = 385450652  # Ваш ID
+    #@dp.message(Command("admin"))
+    #async def admin_command_handler(message: Message):
+    #    """Прямой обработчик команды admin"""
+    #    user_id = message.from_user.id
+     #   ADMIN_ID = 385450652  # Ваш ID
+    #
+    #    # Отладка
+     #   print(f"🔍 Команда /admin от пользователя {user_id}")
+      #  logger.info(f"🔍 Команда /admin от пользователя {user_id}")
+    #
+     #   if user_id != ADMIN_ID:
+      #      await message.answer(f"❌ У вас нет доступа. Ваш ID: {user_id}")
+       #     return
+    #
+     #   text = (
+      #      "⚙️ *АДМИН-ПАНЕЛЬ*\n\n"
+       #     "👑 Добро пожаловать, администратор!\n\n"
+        #    "*Доступные действия:*\n"
+         #   "📊 • Статистика бота\n"
+          #  "👥 • Список пользователей\n"
+           # "👑 • Управление премиум\n"
+            #"📢 • Рассылка"
+    #    )
+    #
+     #   builder = InlineKeyboardBuilder()
+      #  builder.row(
+       #     InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
+        #    InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
+       # )
+        #builder.row(
+     #       InlineKeyboardButton(text="👑 Премиум", callback_data="admin_premium_menu"),
+      #      InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast_menu")
+       # )
+        #builder.row(
+      #      InlineKeyboardButton(text="👋 Выход", callback_data="back_to_main")
+     #   )
     
-        # Отладка
-        print(f"🔍 Команда /admin от пользователя {user_id}")
-        logger.info(f"🔍 Команда /admin от пользователя {user_id}")
-    
-        if user_id != ADMIN_ID:
-            await message.answer(f"❌ У вас нет доступа. Ваш ID: {user_id}")
-            return
-    
-        text = (
-            "⚙️ *АДМИН-ПАНЕЛЬ*\n\n"
-            "👑 Добро пожаловать, администратор!\n\n"
-            "*Доступные действия:*\n"
-            "📊 • Статистика бота\n"
-            "👥 • Список пользователей\n"
-            "👑 • Управление премиум\n"
-            "📢 • Рассылка"
-        )
-    
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-            InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
-        )
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="admin_premium_menu"),
-            InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast_menu")
-        )
-        builder.row(
-            InlineKeyboardButton(text="👋 Выход", callback_data="back_to_main")
-        )
-    
-        await message.answer(text, reply_markup=builder.as_markup())
+       # await message.answer(text, reply_markup=builder.as_markup())
 
     # Инициализация базы данных (создаст ТОЛЬКО основные таблицы)
     await init_db()
