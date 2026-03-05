@@ -15,6 +15,10 @@ class WorkoutStates(StatesGroup):
     waiting_reps = State()
     waiting_weight = State()
 
+class AddExerciseStates(StatesGroup):
+    waiting_exercise_name = State()
+    waiting_exercise_alias = State()
+
 @router.callback_query(F.data == "training_journal")
 async def training_journal(callback: CallbackQuery):
     """Журнал тренировок - главное меню"""
@@ -36,6 +40,73 @@ async def training_journal(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
+@router.callback_query(F.data == "add_exercise")
+async def add_exercise_start(callback: CallbackQuery, state: FSMContext):
+    """Начало добавления упражнения"""
+    await callback.message.edit_text(
+        "📝 *Добавление упражнения*\n\n"
+        "Введите название упражнения (например: Жим лежа):\n\n"
+        "Или отправьте /cancel для отмены."
+    )
+    await state.set_state(AddExerciseStates.waiting_exercise_name)
+    await callback.answer()
+
+@router.message(AddExerciseStates.waiting_exercise_name)
+async def process_exercise_name(message: Message, state: FSMContext):
+    """Обработка названия упражнения"""
+    if message.text == "/cancel":
+        await message.answer("❌ Добавление отменено.")
+        await state.clear()
+        return
+    
+    exercise_name = message.text.strip()
+    await state.update_data(exercise_name=exercise_name)
+    
+    await message.answer(
+        f"✅ Название сохранено: {exercise_name}\n\n"
+        "Хотите добавить короткое название (алиас)?\n"
+        "Например: 'Жим'\n\n"
+        "Отправьте алиас или '-' чтобы пропустить:"
+    )
+    await state.set_state(AddExerciseStates.waiting_exercise_alias)
+
+@router.message(AddExerciseStates.waiting_exercise_alias)
+async def process_exercise_alias(message: Message, state: FSMContext):
+    """Обработка алиаса упражнения"""
+    if message.text == "/cancel":
+        await message.answer("❌ Добавление отменено.")
+        await state.clear()
+        return
+    
+    data = await state.get_data()
+    exercise_name = data['exercise_name']
+    user_id = message.from_user.id
+    
+    alias = None if message.text == '-' else message.text.strip()
+    
+    # Сохраняем упражнение
+    await db.execute(
+        "INSERT INTO exercises (user_id, name, alias) VALUES (?, ?, ?)",
+        (user_id, exercise_name, alias)
+    )
+    
+    alias_text = f" (алиас: {alias})" if alias else ""
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ ЕЩЁ", callback_data="add_exercise"),
+        InlineKeyboardButton(text="📋 МОИ УПРАЖНЕНИЯ", callback_data="my_exercises")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ В ЖУРНАЛ", callback_data="training_journal")
+    )
+    
+    await message.answer(
+        f"✅ *Упражнение добавлено!*\n\n"
+        f"🏋️ {exercise_name}{alias_text}",
+        reply_markup=builder.as_markup()
+    )
+    await state.clear()
 @router.callback_query(F.data == "add_workout")
 async def add_workout_start(callback: CallbackQuery, state: FSMContext):
     """Начало добавления тренировки"""
