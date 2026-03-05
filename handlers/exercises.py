@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -13,6 +13,37 @@ class ManageExerciseStates(StatesGroup):
     waiting_edit_choice = State()
     waiting_new_name = State()
     waiting_new_alias = State()
+
+@router.callback_query(F.data == "exercises")
+async def exercises_main_menu(callback: CallbackQuery):
+    """Главное меню управления упражнениями"""
+    user_id = callback.from_user.id
+    
+    # Получаем статистику упражнений
+    exercises_count = await db.fetch_one(
+        "SELECT COUNT(*) as count FROM exercises WHERE user_id = ?",
+        (user_id,)
+    )
+    count = exercises_count['count'] if exercises_count else 0
+    
+    text = (
+        "💪 *Управление упражнениями*\n\n"
+        f"📊 Всего упражнений: {count}\n\n"
+        "Выберите действие:"
+    )
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📋 МОИ УПРАЖНЕНИЯ", callback_data="my_exercises"),
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ", callback_data="add_exercise")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🔤 АЛИАСЫ", callback_data="exercise_aliases"),
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+    )
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
 
 @router.callback_query(F.data == "manage_exercises")
 async def manage_exercises(callback: CallbackQuery):
