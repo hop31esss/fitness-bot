@@ -35,6 +35,7 @@ from handlers.daily_routine import router as daily_routine_router
 #from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
+from handlers.admin_panel import router as admin_panel_router
 
 
 # --- НАСТРОЙКА ЛОГИРОВАНИЯ ---
@@ -118,6 +119,7 @@ async def main():
         (feed_router, "Лента активности"),
         (one_rep_max_router, "1ПМ"),
         (challenges_router, "Челленджи"),
+        (admin_panel_router, "Админ-панель"),
         (calorie_tracker_router, "Калории"),
         (common_router, "Общие обработчики"),
     ]
