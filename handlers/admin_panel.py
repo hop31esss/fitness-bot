@@ -5,14 +5,14 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
-from config import ADMIN_ID
-from handlers.admin_panel import router as admin_panel_router
-import logging
-logger = logging.getLogger(__name__)
-
 import asyncio
+import logging
 
 from database.base import db
+from config import ADMIN_ID
+
+router = Router()
+logger = logging.getLogger(__name__)
 
 router = Router()
 
