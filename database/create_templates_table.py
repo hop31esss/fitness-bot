@@ -4,7 +4,8 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-def fix_templates():
+def create_templates_table():
+    """Создание таблицы для шаблонов тренировок"""
     try:
         conn = sqlite3.connect('fitness_bot.db')
         cursor = conn.cursor()
@@ -22,8 +23,9 @@ def fix_templates():
         conn.commit()
         conn.close()
         logger.info("✅ Таблица workout_templates создана")
+        
     except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
+        logger.error(f"❌ Ошибка создания таблицы: {e}")
 
 if __name__ == "__main__":
-    fix_templates()
+    create_templates_table()
