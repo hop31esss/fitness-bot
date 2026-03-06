@@ -47,74 +47,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ ШАБЛОНОВ ===
-def create_templates_table():
-    """Принудительное создание таблицы workout_templates"""
-    try:
-        import sqlite3
-        import os
-        
-        db_path = 'fitness_bot.db'
-        print(f"🔧 Создание таблицы workout_templates в {os.path.abspath(db_path)}")
-        
-        # Проверяем права на запись
-        if os.path.exists(db_path):
-            print(f"✅ Файл БД существует, права: {oct(os.stat(db_path).st_mode)[-3:]}")
-        else:
-            print(f"⚠️ Файл БД не существует, будет создан")
-        
-        conn = sqlite3.connect(db_path)
-        cursor = conn.cursor()
-        
-        # Включаем внешние ключи (на всякий случай)
-        cursor.execute("PRAGMA foreign_keys = ON")
-        
-        # Создаём таблицу
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS workout_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                exercises TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-        
-        # Проверяем
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workout_templates'")
-        if cursor.fetchone():
-            print("✅ Таблица workout_templates успешно создана")
-        else:
-            print("❌ Таблица НЕ создалась")
-        
-        conn.close()
-    except Exception as e:
-        print(f"❌ Ошибка: {e}")
-        import traceback
-        traceback.print_exc()
-
-# === ФУНКЦИЯ СОЗДАНИЯ ТАБЛИЦЫ ШАБЛОНОВ ===
-def create_templates_table():
-    """Принудительное создание таблицы workout_templates"""
-    try:
-        conn = sqlite3.connect('fitness_bot.db')
-        cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS workout_templates (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                name TEXT NOT NULL,
-                exercises TEXT NOT NULL,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        conn.commit()
-        conn.close()
-        logger.info("✅ Таблица workout_templates создана/проверена")
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания таблицы workout_templates: {e}")
-
 async def main():
     # Инициализация бота
     bot = Bot(token=BOT_TOKEN)
@@ -125,8 +57,6 @@ async def main():
     await init_db()
     logger.info("База данных инициализирована")
 
-    # ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ ШАБЛОНОВ
-    create_templates_table()
 
     # --- РЕГИСТРАЦИЯ РОУТЕРОВ  ---
     routers = [
