@@ -14,8 +14,8 @@ router = Router()
 logger = logging.getLogger(__name__)
 
 # Цены
-PREMIUM_PRICE = 299  # рублей
-PREMIUM_STARS_PRICE = 25  # Telegram Stars
+PREMIUM_PRICE = 150  # рублей (было 299)
+PREMIUM_STARS_PRICE = 120  # Telegram Stars (было 25)
 PREMIUM_MONTHS = 1
 
 # ================ ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ================

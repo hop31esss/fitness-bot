@@ -30,7 +30,7 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     else:
         # Для обычных - только кнопка покупки
         builder.row(
-            InlineKeyboardButton(text="👑 ПРЕМИУМ (299₽/мес)", callback_data="show_premium_info")
+            InlineKeyboardButton(text="👑 ПРЕМИУМ (150₽/мес)", callback_data="show_premium_info")
         )
     
     # ========== ДНЕВНИК ==========
