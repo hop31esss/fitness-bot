@@ -372,15 +372,16 @@ async def save_exercise(state: FSMContext, message: Message):
         'type': data['current_exercise_type']
     }
     
+    # Проверяем тип упражнения и добавляем соответствующие поля
     if exercise['type'] == 'strength':
-        # Для силовых упражнений - есть подходы, повторения, вес
+        # Для силовых упражнений - подходы, повторения, вес
         exercise.update({
-            'sets': data['sets'],
-            'reps': data['reps'],
+            'sets': data.get('sets'),
+            'reps': data.get('reps'),
             'weight': data.get('weight')
         })
     elif exercise['type'] == 'cardio':
-        # Для кардио - есть длительность и дистанция
+        # Для кардио - длительность и дистанция
         exercise.update({
             'duration': data.get('duration'),
             'distance': data.get('distance')
@@ -406,7 +407,7 @@ async def save_exercise(state: FSMContext, message: Message):
                 (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (session_id, exercise['name'], 'strength', 
-                  exercise['sets'], exercise['reps'], exercise.get('weight'),
+                  exercise.get('sets'), exercise.get('reps'), exercise.get('weight'),
                   order_num))
         elif exercise['type'] == 'cardio':
             await db.execute("""
