@@ -67,7 +67,7 @@ async def close_db():
 
 async def create_tables():
     """Создание таблиц"""
-    
+
     # Таблица пользователей
     await db.execute("""
        CREATE TABLE IF NOT EXISTS users (
@@ -234,6 +234,18 @@ async def create_tables():
         )
     """,)
     logger.info("✅ Таблица food создана")
+
+     # Таблица шаблонов тренировок
+    await db.execute("""
+    CREATE TABLE IF NOT EXISTS workout_templates (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        exercises TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    logger.info("✅ Таблица workout_templates создана")
     
     # Индексы для оптимизации
     await db.execute("CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, created_at)")
