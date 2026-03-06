@@ -5,8 +5,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime
-from aiogram.types import FSInputFile
-import tempfile
 
 from database.base import db
 
@@ -22,6 +20,12 @@ class TemplateStates(StatesGroup):
     waiting_name = State()
     waiting_edit_name = State()
     waiting_edit_exercises = State()
+
+class TemplateCopyStates(StatesGroup):
+    waiting_new_name = State()
+
+class TemplateShareStates(StatesGroup):
+    waiting_friend_id = State()
 
 # ========== ГЛАВНОЕ МЕНЮ ШАБЛОНОВ ==========
 
@@ -53,16 +57,6 @@ async def templates_menu(callback: CallbackQuery):
         builder.row(
             InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ", callback_data="template_edit_list")
         )
-        builder.row(
-            InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ УПРАЖНЕНИЯ", callback_data=f"template_edit_exercises:{template_id}")
-        )
-    builder.row(
-        InlineKeyboardButton(text="📋 ПРОСМОТРЕТЬ", callback_data=f"template_view:{template_id}"),
-        InlineKeyboardButton(text="📋 КОПИРОВАТЬ", callback_data=f"template_copy:{template_id}")
-    )   
-    builder.row(
-        InlineKeyboardButton(text="📤 ОТПРАВИТЬ ДРУГУ", callback_data=f"template_share:{template_id}")
-    )
     builder.row(
         InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
     )
@@ -229,6 +223,18 @@ async def template_edit_menu(callback: CallbackQuery, state: FSMContext):
         InlineKeyboardButton(text="📝 ИЗМЕНИТЬ НАЗВАНИЕ", callback_data=f"template_edit_name:{template_id}")
     )
     builder.row(
+        InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ УПРАЖНЕНИЯ", callback_data=f"template_edit_exercises:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📋 ПРОСМОТРЕТЬ", callback_data=f"template_view:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📋 КОПИРОВАТЬ", callback_data=f"template_copy:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="📤 ОТПРАВИТЬ ДРУГУ", callback_data=f"template_share:{template_id}")
+    )
+    builder.row(
         InlineKeyboardButton(text="❌ УДАЛИТЬ", callback_data=f"template_delete:{template_id}")
     )
     builder.row(
@@ -237,6 +243,8 @@ async def template_edit_menu(callback: CallbackQuery, state: FSMContext):
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
+
+# ========== ИЗМЕНЕНИЕ НАЗВАНИЯ ==========
 
 @router.callback_query(F.data.startswith("template_edit_name:"))
 async def template_edit_name(callback: CallbackQuery, state: FSMContext):
@@ -267,6 +275,8 @@ async def update_template_name(message: Message, state: FSMContext):
         ).as_markup()
     )
     await state.clear()
+
+# ========== УДАЛЕНИЕ ==========
 
 @router.callback_query(F.data.startswith("template_delete:"))
 async def template_delete_confirm(callback: CallbackQuery):
@@ -301,7 +311,199 @@ async def template_delete_execute(callback: CallbackQuery):
     )
     await callback.answer()
 
-# ========== РЕДАКТИРОВАНИЕ УПРАЖНЕНИЙ ВНУТРИ ШАБЛОНА ==========
+# ========== ПРОСМОТР ==========
+
+@router.callback_query(F.data.startswith("template_view:"))
+async def template_view(callback: CallbackQuery):
+    template_id = int(callback.data.split(":")[1])
+    
+    template = await db.fetch_one(
+        "SELECT name, exercises FROM workout_templates WHERE id = ?",
+        (template_id,)
+    )
+    
+    if not template:
+        await callback.answer("❌ Шаблон не найден", show_alert=True)
+        return
+    
+    exercises = json.loads(template['exercises'])
+    
+    text = f"📋 *{template['name']}*\n\n"
+    for i, ex in enumerate(exercises, 1):
+        if ex['type'] == 'strength':
+            weight = f"{ex['weight']} кг" if ex.get('weight') else "б/в"
+            text += f"{i}. {ex['name']} — {ex['sets']}×{ex['reps']} ({weight})\n"
+        else:
+            text += f"{i}. {ex['name']} — {ex['duration']} мин, {ex['distance']} км\n"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📋 ВЫБРАТЬ ДРУГОЙ", callback_data="template_list"),
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates")
+    )
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+# ========== КОПИРОВАНИЕ ==========
+
+@router.callback_query(F.data.startswith("template_copy:"))
+async def template_copy(callback: CallbackQuery, state: FSMContext):
+    template_id = int(callback.data.split(":")[1])
+    
+    template = await db.fetch_one(
+        "SELECT name, exercises FROM workout_templates WHERE id = ?",
+        (template_id,)
+    )
+    
+    if not template:
+        await callback.answer("❌ Шаблон не найден", show_alert=True)
+        return
+    
+    await state.update_data(original_template_id=template_id, exercises=template['exercises'])
+    
+    await callback.message.edit_text(
+        f"📝 *Копирование шаблона*\n\n"
+        f"Исходный: «{template['name']}»\n\n"
+        f"Введите новое название для копии:"
+    )
+    await state.set_state(TemplateCopyStates.waiting_new_name)
+    await callback.answer()
+
+@router.message(TemplateCopyStates.waiting_new_name)
+async def template_copy_save(message: Message, state: FSMContext):
+    new_name = message.text.strip()
+    data = await state.get_data()
+    user_id = message.from_user.id
+    
+    await db.execute(
+        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
+        (user_id, new_name, data['exercises'])
+    )
+    
+    await message.answer(
+        f"✅ Копия «{new_name}» создана!",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates")
+        ).as_markup()
+    )
+    await state.clear()
+
+# ========== ОТПРАВКА ДРУГУ ==========
+
+@router.callback_query(F.data.startswith("template_share:"))
+async def template_share_start(callback: CallbackQuery, state: FSMContext):
+    template_id = int(callback.data.split(":")[1])
+    
+    template = await db.fetch_one(
+        "SELECT name FROM workout_templates WHERE id = ?",
+        (template_id,)
+    )
+    
+    if not template:
+        await callback.answer("❌ Шаблон не найден", show_alert=True)
+        return
+    
+    await state.update_data(share_template_id=template_id)
+    
+    await callback.message.edit_text(
+        f"📤 *Отправка другу*\n\n"
+        f"Шаблон: «{template['name']}»\n\n"
+        f"Введите Telegram ID друга (число):"
+    )
+    await state.set_state(TemplateShareStates.waiting_friend_id)
+    await callback.answer()
+
+@router.message(TemplateShareStates.waiting_friend_id)
+async def template_share_send(message: Message, state: FSMContext):
+    try:
+        friend_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Введите корректный ID (только цифры)")
+        return
+    
+    data = await state.get_data()
+    template_id = data['share_template_id']
+    user_id = message.from_user.id
+    
+    template = await db.fetch_one(
+        "SELECT name, exercises FROM workout_templates WHERE id = ?",
+        (template_id,)
+    )
+    
+    if not template:
+        await message.answer("❌ Шаблон не найден")
+        await state.clear()
+        return
+    
+    sender = await db.fetch_one(
+        "SELECT first_name, username FROM users WHERE user_id = ?",
+        (user_id,)
+    )
+    sender_name = sender['first_name'] or sender['username'] or f"ID{user_id}"
+    
+    exercises = json.loads(template['exercises'])
+    text = f"📦 *Подарок от {sender_name}*\n\n📋 *{template['name']}*\n\n"
+    for i, ex in enumerate(exercises, 1):
+        if ex['type'] == 'strength':
+            weight = f"{ex['weight']} кг" if ex.get('weight') else "б/в"
+            text += f"{i}. {ex['name']} — {ex['sets']}×{ex['reps']} ({weight})\n"
+        else:
+            text += f"{i}. {ex['name']} — {ex['duration']} мин, {ex['distance']} км\n"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="✅ ПРИНЯТЬ", callback_data=f"template_accept:{user_id}:{template_id}"),
+        InlineKeyboardButton(text="❌ ОТКЛОНИТЬ", callback_data="template_decline")
+    )
+    
+    try:
+        await message.bot.send_message(
+            friend_id,
+            text,
+            reply_markup=builder.as_markup()
+        )
+        await message.answer("✅ Шаблон отправлен другу!")
+    except Exception:
+        await message.answer("❌ Не удалось отправить. Проверьте ID.")
+    
+    await state.clear()
+
+@router.callback_query(F.data.startswith("template_accept:"))
+async def template_accept(callback: CallbackQuery):
+    parts = callback.data.split(":")
+    sender_id = int(parts[1])
+    template_id = int(parts[2])
+    receiver_id = callback.from_user.id
+    
+    template = await db.fetch_one(
+        "SELECT name, exercises FROM workout_templates WHERE id = ?",
+        (template_id,)
+    )
+    
+    if not template:
+        await callback.answer("❌ Шаблон не найден", show_alert=True)
+        return
+    
+    await db.execute(
+        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
+        (receiver_id, template['name'], template['exercises'])
+    )
+    
+    await callback.message.edit_text(
+        "✅ Шаблон добавлен в вашу библиотеку!",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates")
+        ).as_markup()
+    )
+    await callback.answer()
+
+@router.callback_query(F.data == "template_decline")
+async def template_decline(callback: CallbackQuery):
+    await callback.message.edit_text("❌ Шаблон отклонён.")
+    await callback.answer()
+
+# ========== РЕДАКТИРОВАНИЕ УПРАЖНЕНИЙ ==========
 
 @router.callback_query(F.data.startswith("template_edit_exercises:"))
 async def template_edit_exercises_list(callback: CallbackQuery, state: FSMContext):
@@ -396,7 +598,7 @@ async def edit_exercise_field(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         f"✏️ Введите {field_names[field]}:"
     )
-    await state.set_state(TemplateEditStates.waiting_new_exercise_name)  # временно используем одно состояние
+    await state.set_state(TemplateEditStates.waiting_new_exercise_name)
     await callback.answer()
 
 @router.message(TemplateEditStates.waiting_new_exercise_name)
@@ -422,7 +624,6 @@ async def update_exercise_field(message: Message, state: FSMContext):
         await message.answer("❌ Неверный формат. Попробуйте ещё раз.")
         return
     
-    # Обновляем список упражнений в базе
     await db.execute(
         "UPDATE workout_templates SET exercises = ? WHERE id = ?",
         (json.dumps(exercises, ensure_ascii=False), template_id)
@@ -438,200 +639,3 @@ async def update_exercise_field(message: Message, state: FSMContext):
         ).as_markup()
     )
     await state.clear()
-@router.callback_query(F.data.startswith("template_view:"))
-async def template_view(callback: CallbackQuery):
-    template_id = int(callback.data.split(":")[1])
-    
-    template = await db.fetch_one(
-        "SELECT name, exercises FROM workout_templates WHERE id = ?",
-        (template_id,)
-    )
-    
-    if not template:
-        await callback.answer("❌ Шаблон не найден", show_alert=True)
-        return
-    
-    exercises = json.loads(template['exercises'])
-    
-    text = f"📋 *{template['name']}*\n\n"
-    for i, ex in enumerate(exercises, 1):
-        if ex['type'] == 'strength':
-            weight = f"{ex['weight']} кг" if ex.get('weight') else "б/в"
-            text += f"{i}. {ex['name']} — {ex['sets']}×{ex['reps']} ({weight})\n"
-        else:
-            text += f"{i}. {ex['name']} — {ex['duration']} мин, {ex['distance']} км\n"
-    
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="📋 ВЫБРАТЬ ДРУГОЙ", callback_data="template_list"),
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates")
-    )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()
-
-class TemplateCopyStates(StatesGroup):
-    waiting_new_name = State()
-
-@router.callback_query(F.data.startswith("template_copy:"))
-async def template_copy(callback: CallbackQuery, state: FSMContext):
-    template_id = int(callback.data.split(":")[1])
-    
-    template = await db.fetch_one(
-        "SELECT name, exercises FROM workout_templates WHERE id = ?",
-        (template_id,)
-    )
-    
-    if not template:
-        await callback.answer("❌ Шаблон не найден", show_alert=True)
-        return
-    
-    await state.update_data(original_template_id=template_id, exercises=template['exercises'])
-    
-    await callback.message.edit_text(
-        f"📝 *Копирование шаблона*\n\n"
-        f"Исходный: «{template['name']}»\n\n"
-        f"Введите новое название для копии:"
-    )
-    await state.set_state(TemplateCopyStates.waiting_new_name)
-    await callback.answer()
-
-@router.message(TemplateCopyStates.waiting_new_name)
-async def template_copy_save(message: Message, state: FSMContext):
-    new_name = message.text.strip()
-    data = await state.get_data()
-    user_id = message.from_user.id
-    
-    await db.execute(
-        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
-        (user_id, new_name, data['exercises'])
-    )
-    
-    await message.answer(
-        f"✅ Копия «{new_name}» создана!",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates")
-        ).as_markup()
-    )
-    await state.clear()
-
-    class TemplateShareStates(StatesGroup):
-    waiting_friend_id = State()
-
-@router.callback_query(F.data.startswith("template_share:"))
-async def template_share_start(callback: CallbackQuery, state: FSMContext):
-    template_id = int(callback.data.split(":")[1])
-    
-    template = await db.fetch_one(
-        "SELECT name FROM workout_templates WHERE id = ?",
-        (template_id,)
-    )
-    
-    if not template:
-        await callback.answer("❌ Шаблон не найден", show_alert=True)
-        return
-    
-    await state.update_data(share_template_id=template_id)
-    
-    await callback.message.edit_text(
-        f"📤 *Отправка другу*\n\n"
-        f"Шаблон: «{template['name']}»\n\n"
-        f"Введите Telegram ID друга (число):"
-    )
-    await state.set_state(TemplateShareStates.waiting_friend_id)
-    await callback.answer()
-
-@router.message(TemplateShareStates.waiting_friend_id)
-async def template_share_send(message: Message, state: FSMContext):
-    try:
-        friend_id = int(message.text.strip())
-    except ValueError:
-        await message.answer("❌ Введите корректный ID (только цифры)")
-        return
-    
-    data = await state.get_data()
-    template_id = data['share_template_id']
-    user_id = message.from_user.id
-    
-    # Получаем шаблон
-    template = await db.fetch_one(
-        "SELECT name, exercises FROM workout_templates WHERE id = ?",
-        (template_id,)
-    )
-    
-    if not template:
-        await message.answer("❌ Шаблон не найден")
-        await state.clear()
-        return
-    
-    # Получаем имя отправителя
-    sender = await db.fetch_one(
-        "SELECT first_name, username FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    sender_name = sender['first_name'] or sender['username'] or f"ID{user_id}"
-    
-    # Формируем текст
-    exercises = json.loads(template['exercises'])
-    text = f"📦 *Подарок от {sender_name}*\n\n📋 *{template['name']}*\n\n"
-    for i, ex in enumerate(exercises, 1):
-        if ex['type'] == 'strength':
-            weight = f"{ex['weight']} кг" if ex.get('weight') else "б/в"
-            text += f"{i}. {ex['name']} — {ex['sets']}×{ex['reps']} ({weight})\n"
-        else:
-            text += f"{i}. {ex['name']} — {ex['duration']} мин, {ex['distance']} км\n"
-    
-    # Кнопки для получателя
-    builder = InlineKeyboardBuilder()
-    builder.row(
-        InlineKeyboardButton(text="✅ ПРИНЯТЬ", callback_data=f"template_accept:{user_id}:{template_id}"),
-        InlineKeyboardButton(text="❌ ОТКЛОНИТЬ", callback_data="template_decline")
-    )
-    
-    try:
-        await message.bot.send_message(
-            friend_id,
-            text,
-            reply_markup=builder.as_markup()
-        )
-        await message.answer("✅ Шаблон отправлен другу!")
-    except Exception:
-        await message.answer("❌ Не удалось отправить. Проверьте ID.")
-    
-    await state.clear()
-
-@router.callback_query(F.data.startswith("template_accept:"))
-async def template_accept(callback: CallbackQuery):
-    parts = callback.data.split(":")
-    sender_id = int(parts[1])
-    template_id = int(parts[2])
-    receiver_id = callback.from_user.id
-    
-    # Получаем шаблон
-    template = await db.fetch_one(
-        "SELECT name, exercises FROM workout_templates WHERE id = ?",
-        (template_id,)
-    )
-    
-    if not template:
-        await callback.answer("❌ Шаблон не найден", show_alert=True)
-        return
-    
-    # Сохраняем у получателя
-    await db.execute(
-        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
-        (receiver_id, template['name'], template['exercises'])
-    )
-    
-    await callback.message.edit_text(
-        "✅ Шаблон добавлен в вашу библиотеку!",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates")
-        ).as_markup()
-    )
-    await callback.answer()
-
-@router.callback_query(F.data == "template_decline")
-async def template_decline(callback: CallbackQuery):
-    await callback.message.edit_text("❌ Шаблон отклонён.")
-    await callback.answer()
