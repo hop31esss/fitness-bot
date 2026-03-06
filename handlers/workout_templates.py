@@ -61,6 +61,8 @@ class TemplateShareStates(StatesGroup):
 
 @router.callback_query(F.data == "templates")
 async def templates_menu(callback: CallbackQuery):
+    ensure_templates_table()
+
     user_id = callback.from_user.id
     
     templates = await db.fetch_all(
