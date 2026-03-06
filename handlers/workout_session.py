@@ -270,6 +270,99 @@ async def process_reps(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Введите число")
 
+
+
+async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
+    """Сохранить упражнение с разными весами по подходам"""
+    data = await state.get_data()
+    
+    exercise = {
+        'name': data['exercise_name'],
+        'type': data['current_exercise_type'],
+        'sets': data['sets'],
+        'reps': data['reps'],
+        'weights': data.get('weights', [])
+    }
+    
+    exercises = data.get('exercises', [])
+    exercises.append(exercise)
+    await state.update_data(exercises=exercises)
+    
+    # Сохраняем в базу (пока упрощенно - сохраняем средний вес)
+    session_id = data['session_id']
+    order_num = len(exercises)
+    
+    # Вычисляем средний вес для отображения
+    weights = [w for w in data.get('weights', []) if w]
+    avg_weight = sum(weights) / len(weights) if weights else None
+    
+    await db.execute("""
+        INSERT INTO workout_exercises 
+        (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+    """, (session_id, exercise['name'], 'strength', 
+          exercise['sets'], exercise['reps'], avg_weight,
+          order_num))
+    
+    # Показываем детали
+    weight_details = ""
+    if weights:
+        weight_details = "\n*Вес по подходам:*\n"
+        for i, w in enumerate(weights, 1):
+            w_text = f"{w} кг" if w else "б/в"
+            weight_details += f"  {i}. {w_text}\n"
+    
+    await message.answer(
+        f"✅ *Упражнение добавлено!*\n\n"
+        f"🏋️ {exercise['name']}\n"
+        f"📊 {exercise['sets']}×{exercise['reps']}\n"
+        f"{weight_details}"
+    )
+    
+    await show_workout_menu(message, state)
+
+@router.message(WorkoutSessionStates.entering_reps)
+async def process_reps(message: Message, state: FSMContext):
+    try:
+        reps = int(message.text)
+        await state.update_data(reps=reps)
+        await message.answer("Введите вес (кг) или '-'")
+        await state.set_state(WorkoutSessionStates.entering_weight)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
+@router.message(WorkoutSessionStates.entering_weight)
+async def process_weight(message: Message, state: FSMContext):
+    weight = None if message.text == '-' else float(message.text)
+    await state.update_data(weight=weight)
+    await save_exercise(state, message)
+    await show_workout_menu(message, state)
+
+@router.message(WorkoutSessionStates.entering_duration)
+async def process_duration(message: Message, state: FSMContext):
+    try:
+        duration = int(message.text)
+        await state.update_data(duration=duration)
+        data = await state.get_data()
+        if data['current_exercise_type'] == 'cardio':
+            await message.answer("Введите дистанцию (км):")
+            await state.set_state(WorkoutSessionStates.entering_distance)
+        else:
+            await save_exercise(state, message)
+            await show_workout_menu(message, state)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
+@router.message(WorkoutSessionStates.entering_distance)
+async def process_distance(message: Message, state: FSMContext):
+    try:
+        distance = float(message.text.replace(',', '.'))
+        await state.update_data(distance=distance)
+        await save_exercise(state, message)
+        await show_workout_menu(message, state)
+    except ValueError:
+        await message.answer("❌ Введите число")
+
 async def save_exercise(state: FSMContext, message: Message):
     """Сохранить упражнение"""
     data = await state.get_data()
@@ -334,87 +427,6 @@ async def save_exercise(state: FSMContext, message: Message):
         logger.info(f"✅ Упражнение {exercise['name']} сохранено")
     except Exception as e:
         logger.error(f"❌ Ошибка сохранения упражнения: {e}")
-
-@router.message(WorkoutSessionStates.entering_reps)
-async def process_reps(message: Message, state: FSMContext):
-    try:
-        reps = int(message.text)
-        await state.update_data(reps=reps)
-        await message.answer("Введите вес (кг) или '-'")
-        await state.set_state(WorkoutSessionStates.entering_weight)
-    except ValueError:
-        await message.answer("❌ Введите число")
-
-@router.message(WorkoutSessionStates.entering_weight)
-async def process_weight(message: Message, state: FSMContext):
-    weight = None if message.text == '-' else float(message.text)
-    await state.update_data(weight=weight)
-    await save_exercise(state, message)
-    await show_workout_menu(message, state)
-
-@router.message(WorkoutSessionStates.entering_duration)
-async def process_duration(message: Message, state: FSMContext):
-    try:
-        duration = int(message.text)
-        await state.update_data(duration=duration)
-        data = await state.get_data()
-        if data['current_exercise_type'] == 'cardio':
-            await message.answer("Введите дистанцию (км):")
-            await state.set_state(WorkoutSessionStates.entering_distance)
-        else:
-            await save_exercise(state, message)
-            await show_workout_menu(message, state)
-    except ValueError:
-        await message.answer("❌ Введите число")
-
-@router.message(WorkoutSessionStates.entering_distance)
-async def process_distance(message: Message, state: FSMContext):
-    try:
-        distance = float(message.text.replace(',', '.'))
-        await state.update_data(distance=distance)
-        await save_exercise(state, message)
-        await show_workout_menu(message, state)
-    except ValueError:
-        await message.answer("❌ Введите число")
-
-async def save_exercise(state: FSMContext, message: Message):
-    data = await state.get_data()
-    exercise = {
-        'name': data['exercise_name'],
-        'type': data['current_exercise_type']
-    }
-    if exercise['type'] == 'strength':
-        exercise.update({
-            'sets': data['sets'],
-            'reps': data['reps'],
-            'weight': data.get('weight')
-        })
-    else:
-        exercise.update({
-            'duration': data.get('duration'),
-            'distance': data.get('distance')
-        })
-    exercises = data.get('exercises', [])
-    exercises.append(exercise)
-    await state.update_data(exercises=exercises)
-    session_id = data['session_id']
-    order_num = len(exercises)
-    if exercise['type'] == 'strength':
-        await db.execute("""
-            INSERT INTO workout_exercises 
-            (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (session_id, exercise['name'], 'strength', 
-              exercise['sets'], exercise['reps'], exercise.get('weight'),
-              order_num))
-    else:
-        await db.execute("""
-            INSERT INTO workout_exercises 
-            (session_id, exercise_name, exercise_type, duration, distance, order_num)
-            VALUES (?, ?, ?, ?, ?, ?)
-        """, (session_id, exercise['name'], 'cardio',
-              exercise.get('duration'), exercise.get('distance'),
-              order_num))
         
 from services.stats_updater import update_user_stats
 @router.callback_query(F.data == "finish_workout")
