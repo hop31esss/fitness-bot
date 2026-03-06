@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sqlite3
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.filters import Command
@@ -46,55 +47,39 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# === ФУНКЦИЯ СОЗДАНИЯ ТАБЛИЦЫ ШАБЛОНОВ ===
+def create_templates_table():
+    """Принудительное создание таблицы workout_templates"""
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                exercises TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+        logger.info("✅ Таблица workout_templates создана/проверена")
+    except Exception as e:
+        logger.error(f"❌ Ошибка создания таблицы workout_templates: {e}")
+
 async def main():
     # Инициализация бота
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
 
-    # ПРЯМОЙ ОБРАБОТЧИК ДЛЯ /admin С ОТЛАДКОЙ
-    #@dp.message(Command("admin"))
-    #async def admin_command_handler(message: Message):
-    #    """Прямой обработчик команды admin"""
-    #    user_id = message.from_user.id
-     #   ADMIN_ID = 385450652  # Ваш ID
-    #
-    #    # Отладка
-     #   print(f"🔍 Команда /admin от пользователя {user_id}")
-      #  logger.info(f"🔍 Команда /admin от пользователя {user_id}")
-    #
-     #   if user_id != ADMIN_ID:
-      #      await message.answer(f"❌ У вас нет доступа. Ваш ID: {user_id}")
-       #     return
-    #
-     #   text = (
-      #      "⚙️ *АДМИН-ПАНЕЛЬ*\n\n"
-       #     "👑 Добро пожаловать, администратор!\n\n"
-        #    "*Доступные действия:*\n"
-         #   "📊 • Статистика бота\n"
-          #  "👥 • Список пользователей\n"
-           # "👑 • Управление премиум\n"
-            #"📢 • Рассылка"
-    #    )
-    #
-     #   builder = InlineKeyboardBuilder()
-      #  builder.row(
-       #     InlineKeyboardButton(text="📊 Статистика", callback_data="admin_stats"),
-        #    InlineKeyboardButton(text="👥 Пользователи", callback_data="admin_users")
-       # )
-        #builder.row(
-     #       InlineKeyboardButton(text="👑 Премиум", callback_data="admin_premium_menu"),
-      #      InlineKeyboardButton(text="📢 Рассылка", callback_data="admin_broadcast_menu")
-       # )
-        #builder.row(
-      #      InlineKeyboardButton(text="👋 Выход", callback_data="back_to_main")
-     #   )
-    
-       # await message.answer(text, reply_markup=builder.as_markup())
-
-    # Инициализация базы данных (создаст ТОЛЬКО основные таблицы)
+    # Инициализация базы данных (создаст основные таблицы)
     await init_db()
     logger.info("База данных инициализирована")
+
+    # ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ ШАБЛОНОВ
+    create_templates_table()
 
     # --- РЕГИСТРАЦИЯ РОУТЕРОВ  ---
     routers = [
@@ -125,11 +110,12 @@ async def main():
         (calorie_tracker_router, "Калории"),
         (common_router, "Общие обработчики"),
     ]
+    
     logger.info(f"charts_router: {charts_router}")
     if charts_router:
-       logger.info("✅ charts_router успешно импортирован")
+        logger.info("✅ charts_router успешно импортирован")
     else:
-       logger.error("❌ charts_router = None")
+        logger.error("❌ charts_router = None")
 
     for router, name in routers:
         try:
