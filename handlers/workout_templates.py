@@ -1,4 +1,5 @@
 import json
+import sqlite3
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
@@ -7,6 +8,29 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime
 
 from database.base import db
+
+# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ ===
+def ensure_templates_table():
+    try:
+        conn = sqlite3.connect('fitness_bot.db')
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS workout_templates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                name TEXT NOT NULL,
+                exercises TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        conn.commit()
+        conn.close()
+        print("✅ Таблица workout_templates создана/проверена")
+    except Exception as e:
+        print(f"❌ Ошибка создания таблицы: {e}")
+
+# Вызываем сразу
+ensure_templates_table()
 
 router = Router()
 
