@@ -270,54 +270,70 @@ async def process_reps(message: Message, state: FSMContext):
     except ValueError:
         await message.answer("❌ Введите число")
 
-async def save_exercise_with_weights(state: FSMContext, message: Message):
-    """Сохранить упражнение с разными весами по подходам"""
+async def save_exercise(state: FSMContext, message: Message):
+    """Сохранить упражнение"""
     data = await state.get_data()
     
     exercise = {
         'name': data['exercise_name'],
-        'type': data['current_exercise_type'],
-        'sets': data['sets'],
-        'reps': data['reps'],
-        'weights': data.get('weights', [])
+        'type': data['current_exercise_type']
     }
+    
+    if exercise['type'] == 'strength':
+        # Для силовых упражнений - есть подходы, повторения, вес
+        exercise.update({
+            'sets': data['sets'],
+            'reps': data['reps'],
+            'weight': data.get('weight')
+        })
+    elif exercise['type'] == 'cardio':
+        # Для кардио - есть длительность и дистанция
+        exercise.update({
+            'duration': data.get('duration'),
+            'distance': data.get('distance')
+        })
+    else:  # stretch
+        # Для растяжки - только длительность
+        exercise.update({
+            'duration': data.get('duration')
+        })
     
     exercises = data.get('exercises', [])
     exercises.append(exercise)
     await state.update_data(exercises=exercises)
     
-    # Сохраняем в базу (пока упрощенно - сохраняем средний вес)
+    # Сохраняем в БД
     session_id = data['session_id']
     order_num = len(exercises)
     
-    # Вычисляем средний вес для отображения
-    weights = [w for w in data.get('weights', []) if w]
-    avg_weight = sum(weights) / len(weights) if weights else None
-    
-    await db.execute("""
-        INSERT INTO workout_exercises 
-        (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (session_id, exercise['name'], 'strength', 
-          exercise['sets'], exercise['reps'], avg_weight,
-          order_num))
-    
-    # Показываем детали
-    weight_details = ""
-    if weights:
-        weight_details = "\n*Вес по подходам:*\n"
-        for i, w in enumerate(weights, 1):
-            w_text = f"{w} кг" if w else "б/в"
-            weight_details += f"  {i}. {w_text}\n"
-    
-    await message.answer(
-        f"✅ *Упражнение добавлено!*\n\n"
-        f"🏋️ {exercise['name']}\n"
-        f"📊 {exercise['sets']}×{exercise['reps']}\n"
-        f"{weight_details}"
-    )
-    
-    await show_workout_menu(message, state)
+    try:
+        if exercise['type'] == 'strength':
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'strength', 
+                  exercise['sets'], exercise['reps'], exercise.get('weight'),
+                  order_num))
+        elif exercise['type'] == 'cardio':
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, duration, distance, order_num)
+                VALUES (?, ?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'cardio',
+                  exercise.get('duration'), exercise.get('distance'),
+                  order_num))
+        else:  # stretch
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, duration, order_num)
+                VALUES (?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'stretch',
+                  exercise.get('duration'), order_num))
+                  
+        logger.info(f"✅ Упражнение {exercise['name']} сохранено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения упражнения: {e}")
 
 @router.message(WorkoutSessionStates.entering_reps)
 async def process_reps(message: Message, state: FSMContext):
