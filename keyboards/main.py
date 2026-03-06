@@ -35,8 +35,10 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     
     # ========== ДНЕВНИК ==========
     builder.row(
-        InlineKeyboardButton(text="📔 ДНЕВНИК ТРЕНИРОВОК", callback_data="workout_journal")
+        InlineKeyboardButton(text="📔 ДНЕВНИК ТРЕНИРОВОК", callback_data="workout_journal"),
+        InlineKeyboardButton(text="📚 МОИ ПРОГРАММЫ", callback_data="templates")
     )
+    
     
     # ========== РЕЖИМ ДНЯ И УПРАЖНЕНИЯ ==========
     builder.row(
