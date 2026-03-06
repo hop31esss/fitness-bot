@@ -2,7 +2,7 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKeyboardMarkup:
-    """Красивое главное меню"""
+    """Компактное главное меню"""
     builder = InlineKeyboardBuilder()
     
     # ========== ОСНОВНЫЕ ФУНКЦИИ ==========
@@ -11,11 +11,12 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
     )
     
     builder.row(
-        InlineKeyboardButton(text="📈 ПРОГРЕСС И СТАТИСТИКА", callback_data="progress_stats")
+        InlineKeyboardButton(text="📊 ПРОГРЕСС И СТАТИСТИКА", callback_data="progress_stats")
     )
     
     # ========== ПРЕМИУМ БЛОК ==========
     if is_premium:
+        # Для премиум - показываем все премиум-функции
         builder.row(
             InlineKeyboardButton(text="🏋️ 1ПМ КАЛЬКУЛЯТОР", callback_data="one_rep_max")
         )
@@ -27,28 +28,26 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
             InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")
         )
     else:
+        # Для обычных - только кнопка покупки
         builder.row(
             InlineKeyboardButton(text="👑 ПРЕМИУМ (299₽/мес)", callback_data="show_premium_info")
         )
     
-    # ========== ДНЕВНИК И ЛЕНТА ==========
+    # ========== ДНЕВНИК ==========
     builder.row(
-        InlineKeyboardButton(text="📔 ДНЕВНИК ТРЕНИРОВОК", callback_data="workout_journal"),
-        InlineKeyboardButton(text="📰 ЛЕНТА АКТИВНОСТИ", callback_data="feed")
+        InlineKeyboardButton(text="📔 ДНЕВНИК ТРЕНИРОВОК", callback_data="workout_journal")
     )
     
-    # ========== РЕЖИМ ДНЯ ==========
+    # ========== РЕЖИМ ДНЯ И УПРАЖНЕНИЯ ==========
     builder.row(
-        InlineKeyboardButton(text="📅 РЕЖИМ ДНЯ", callback_data="daily_routine")
-    )
-    builder.row(
-            InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
+        InlineKeyboardButton(text="⏰ РЕЖИМ ДНЯ", callback_data="daily_routine"),
+        InlineKeyboardButton(text="💪 УПРАЖНЕНИЯ", callback_data="exercises")
     )
     
-    # ========== УПРАЖНЕНИЯ И РЕКОМЕНДАЦИИ ==========
+    # ========== РЕКОМЕНДАЦИИ И AI-СОВЕТЫ ==========
     builder.row(
-        InlineKeyboardButton(text="💪 УПРАЖНЕНИЯ", callback_data="exercises"),
-        InlineKeyboardButton(text="💡 РЕКОМЕНДАЦИИ", callback_data="recommendations")
+        InlineKeyboardButton(text="💡 РЕКОМЕНДАЦИИ", callback_data="recommendations"),
+        InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
     )
     
     # ========== ИНСТРУМЕНТЫ ==========
