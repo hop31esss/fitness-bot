@@ -9,11 +9,27 @@ from datetime import datetime
 
 from database.base import db
 
-# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ ===
+import os
+
+# === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ С ОТЛАДКОЙ ===
 def ensure_templates_table():
     try:
-        conn = sqlite3.connect('fitness_bot.db')
+        # Проверяем, существует ли файл БД
+        db_path = 'fitness_bot.db'
+        if os.path.exists(db_path):
+            print(f"✅ Файл БД найден: {db_path}, размер: {os.path.getsize(db_path)} байт")
+        else:
+            print(f"❌ Файл БД НЕ найден: {db_path}")
+        
+        conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
+        
+        # Проверяем существующие таблицы
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = cursor.fetchall()
+        print(f"📊 Существующие таблицы: {[t[0] for t in tables]}")
+        
+        # Создаём таблицу
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS workout_templates (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -24,12 +40,20 @@ def ensure_templates_table():
             )
         """)
         conn.commit()
+        
+        # Проверяем, создалась ли
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='workout_templates'")
+        if cursor.fetchone():
+            print("✅ Таблица workout_templates успешно создана")
+        else:
+            print("❌ Таблица workout_templates НЕ создалась")
+        
         conn.close()
-        print("✅ Таблица workout_templates создана/проверена")
     except Exception as e:
         print(f"❌ Ошибка создания таблицы: {e}")
+        import traceback
+        traceback.print_exc()
 
-# Вызываем сразу
 ensure_templates_table()
 
 router = Router()
