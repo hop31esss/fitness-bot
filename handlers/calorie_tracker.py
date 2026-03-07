@@ -115,7 +115,7 @@ async def calorie_tracker_menu(callback: CallbackQuery):
         await callback.message.answer(
             "👑 *Премиум-доступ*\n\n"
             "Трекер калорий доступен только с премиум-подпиской!\n\n"
-            "💰 299₽/месяц",
+            "💰 150₽/месяц",
             reply_markup=builder.as_markup()
         )
         return

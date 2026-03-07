@@ -82,7 +82,7 @@ async def one_rep_max_menu(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             "👑 *Премиум-доступ*\n\n"
             "Калькулятор 1ПМ доступен только с премиум-подпиской!\n\n"
-            "💰 299₽/месяц\n\n"
+            "💰 150₽/месяц\n\n"
             "Приобрести можно у администратора: @hop31esss",
             reply_markup=builder.as_markup()
         )

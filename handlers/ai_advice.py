@@ -53,7 +53,7 @@ async def ai_advice_menu(callback: CallbackQuery):
         await callback.message.answer(
             "🤖 *AI-советы*\n\n"
             "Эта функция доступна только с премиум-подпиской!\n\n"
-            "💰 299₽/месяц",
+            "💰 150₽/месяц",
             reply_markup=builder.as_markup()
         )
         return
