@@ -13,49 +13,12 @@ router = Router()
 class FriendStates(StatesGroup):
     waiting_friend_username = State()
 
-# ================ ПРОВЕРКА ПРЕМИУМ ================
-
-async def check_premium_access(user_id: int) -> bool:
-    """Проверка доступа к премиум-функциям"""
-    if user_id == ADMIN_ID:
-        return True
-    
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            return True
-    
-    return False
-
 # ================ ГЛАВНОЕ МЕНЮ ДРУЗЕЙ ================
 
 @router.callback_query(F.data == "friends_menu")
 async def friends_menu(callback: CallbackQuery):
     """Меню друзей"""
     user_id = callback.from_user.id
-    
-    # Проверка премиум-доступа
-    if not await check_premium_access(user_id):
-        await callback.answer("❌ Премиум-функция!", show_alert=True)
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
-        )
-        
-        await callback.message.answer(
-            "👑 *Премиум-доступ*\n\n"
-            "Друзья и челленджи доступны только с премиум-подпиской!\n\n"
-            "💰 150₽/месяц\n\n"
-            "Приобрести можно у администратора: @hop31esss",
-            reply_markup=builder.as_markup()
-        )
-        return
     
     # Получаем статистику друзей
     friends_count = await db.fetch_one("""

@@ -24,7 +24,6 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
             InlineKeyboardButton(text="🔥 ТРЕКЕР КАЛОРИЙ", callback_data="calorie_tracker")
         )
         builder.row(
-            InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
             InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")
         )
     else:
@@ -32,6 +31,11 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
         builder.row(
             InlineKeyboardButton(text="👑 ПРЕМИУМ (150₽/мес)", callback_data="show_premium_info")
         )
+
+    # ========== ДРУЗЬЯ ДЛЯ ВСЕХ ==========
+    builder.row(
+        InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu")
+    )    
     
     # ========== ДНЕВНИК ==========
     builder.row(
