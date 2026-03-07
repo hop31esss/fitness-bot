@@ -34,6 +34,7 @@ from handlers.challenges import router as challenges_router
 from handlers.feed import router as feed_router
 from handlers.daily_routine import router as daily_routine_router
 from handlers.workout_templates import router as templates_router
+from handlers.apple_health import router as health_router
 #from handlers.music import router as music_router
 from handlers.workout_session import router as workout_session_router
 from handlers.progress_stats import router as progress_stats_router
@@ -85,6 +86,7 @@ async def main():
         (challenges_router, "Челленджи"),
         (admin_panel_router, "Админ-панель"),
         (calorie_tracker_router, "Калории"),
+        (health_router, "Apple Health"),
         (common_router, "Общие обработчики"),
     ]
     
