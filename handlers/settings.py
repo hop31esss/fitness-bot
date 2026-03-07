@@ -49,18 +49,19 @@ async def settings_menu(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="📏 Единицы измерения", callback_data="settings_units"),
-        InlineKeyboardButton(text="🔔 Уведомления", callback_data="settings_notifications")
-    )
+    InlineKeyboardButton(text="📏 Единицы измерения", callback_data="settings_units"),
+    InlineKeyboardButton(text="🔔 Уведомления", callback_data="settings_notifications")
+)
     builder.row(
         InlineKeyboardButton(text="📤 Экспорт данных", callback_data="settings_export"),
-        InlineKeyboardButton(text="📊 Статистика", callback_data="stats")
+        InlineKeyboardButton(text="🍎 Apple Health", callback_data="health_command")  # НОВАЯ КНОПКА!
     )
     builder.row(
         InlineKeyboardButton(text="🔄 Сброс данных", callback_data="settings_reset"),
         InlineKeyboardButton(text="ℹ️ О боте", callback_data="settings_about")
     )
     builder.row(
+        InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
         InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
     )
     
