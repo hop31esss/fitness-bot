@@ -606,7 +606,6 @@ async def process_reps(message: Message, state: FSMContext):
         await message.answer("❌ Введите число")
 
 
-
 async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
     """Сохранить упражнение с разными весами по подходам"""
     data = await state.get_data()
@@ -655,16 +654,6 @@ async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
     )
     
     await show_workout_menu(message, state)
-
-@router.message(WorkoutSessionStates.entering_reps)
-async def process_reps(message: Message, state: FSMContext):
-    try:
-        reps = int(message.text)
-        await state.update_data(reps=reps)
-        await message.answer("Введите вес (кг) или '-'")
-        await state.set_state(WorkoutSessionStates.entering_weight)
-    except ValueError:
-        await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_weight)
 async def process_weight(message: Message, state: FSMContext):
