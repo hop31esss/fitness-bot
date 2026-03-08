@@ -62,6 +62,7 @@ class WorkoutSessionStates(StatesGroup):
     entering_exercise_name = State()
     entering_sets = State()
     choosing_reps_method = State()  # НОВОЕ: выбор метода ввода повторений
+    entering_set_data = State()
     entering_set_reps = State()      # НОВОЕ: ввод повторений по подходам
     entering_reps = State()          # для одинаковых повторений
     choosing_weight_method = State()  # выбор метода ввода веса
@@ -104,23 +105,91 @@ async def show_workout_menu(message, state: FSMContext):
         for i, ex in enumerate(exercises, 1):
             if ex['type'] == 'strength':
                 text += f"{i}. {ex['name']}: {ex['sets']}×{ex['reps_display']} ({ex['weight_display']})\n"
+                
+                # Детали по подходам (если нужно)
+                if 'set_data' in ex:
+                    details = ""
+                    for j, s in enumerate(ex['set_data'], 1):
+                        weight = f"{s['weight']} кг" if s['weight'] else "б/в"
+                        details += f"   {j}. {weight} × {s['reps']}\n"
+                    text += details
+                    
             elif ex['type'] == 'cardio':
                 text += f"{i}. {ex['name']}: {ex['duration']} мин, {ex['distance']} км\n"
             else:  # stretch
                 text += f"{i}. {ex['name']}: {ex['duration']} мин (растяжка)\n"
+        text += "\n"
     else:
         text += "Пока нет упражнений. Добавьте первое!\n"
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="➕ ДОБАВИТЬ", callback_data="add_to_workout")
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_to_workout")
     )
     builder.row(
-        InlineKeyboardButton(text="✅ ЗАВЕРШИТЬ", callback_data="finish_workout"),
+        InlineKeyboardButton(text="✅ ЗАВЕРШИТЬ ТРЕНИРОВКУ", callback_data="finish_workout"),
         InlineKeyboardButton(text="❌ ОТМЕНИТЬ", callback_data="cancel_workout")
     )
     
     await message.answer(text, reply_markup=builder.as_markup())
+
+async def save_exercise_from_set_data(state: FSMContext, message: Message):
+    """Сохранить упражнение из данных по подходам"""
+    data = await state.get_data()
+    
+    exercise = {
+        'name': data['exercise_name'],
+        'type': data['current_exercise_type'],
+        'sets': data['sets'],
+        'set_data': data['set_data']
+    }
+    
+    # Формируем отображение
+    weight_values = [s['weight'] for s in data['set_data'] if s['weight'] is not None]
+    reps_values = [s['reps'] for s in data['set_data']]
+    
+    if weight_values:
+        min_w = min(weight_values)
+        max_w = max(weight_values)
+        weight_display = f"{min_w}-{max_w} кг" if min_w != max_w else f"{min_w} кг"
+    else:
+        weight_display = "б/в"
+    
+    if len(set(reps_values)) == 1:
+        reps_display = str(reps_values[0])
+    else:
+        min_r = min(reps_values)
+        max_r = max(reps_values)
+        reps_display = f"{min_r}-{max_r}"
+    
+    exercise['weight_display'] = weight_display
+    exercise['reps_display'] = reps_display
+    
+    # Добавляем к списку упражнений
+    exercises = data.get('exercises', [])
+    exercises.append(exercise)
+    await state.update_data(exercises=exercises)
+    
+    # Сохраняем в БД (усреднённые данные)
+    session_id = data['session_id']
+    order_num = len(exercises)
+    
+    try:
+        if exercise['type'] == 'strength':
+            avg_weight = sum(weight_values) / len(weight_values) if weight_values else None
+            avg_reps = sum(reps_values) / len(reps_values)
+            
+            await db.execute("""
+                INSERT INTO workout_exercises 
+                (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            """, (session_id, exercise['name'], 'strength', 
+                  exercise['sets'], avg_reps, avg_weight,
+                  order_num))
+                  
+        logger.info(f"✅ Упражнение {exercise['name']} сохранено")
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения упражнения: {e}")    
 
 @router.callback_query(F.data == "add_to_workout")
 async def add_to_workout(callback: CallbackQuery, state: FSMContext):
@@ -157,31 +226,32 @@ async def process_exercise_name(message: Message, state: FSMContext):
 
 @router.message(WorkoutSessionStates.entering_sets)
 async def process_sets(message: Message, state: FSMContext):
-    """Обработка подходов - теперь спрашиваем про повторения"""
+    """Обработка подходов - начинаем ввод данных по подходам"""
     try:
         sets = int(message.text)
         if sets <= 0:
             raise ValueError
-        await state.update_data(sets=sets)
         
-        # Спрашиваем, одинаковые ли повторения во всех подходах
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="✅ ОДИНАКОВЫЕ", callback_data="reps_same"),
-            InlineKeyboardButton(text="📊 ПО ПОДХОДАМ", callback_data="reps_each")
+        # Инициализируем данные для подходов
+        set_data = []
+        for i in range(sets):
+            set_data.append({'weight': None, 'reps': None})
+        
+        await state.update_data(
+            sets=sets,
+            set_data=set_data,
+            current_set=1
         )
         
+        # Начинаем с первого подхода - спрашиваем вес
         await message.answer(
-            f"🔄 *Ввод повторений*\n\n"
-            f"У вас {sets} подходов. Повторения одинаковые или разные?\n\n"
-            f"• Одинаковые - одно значение для всех подходов\n"
-            f"• По подходам - разное количество повторений",
-            reply_markup=builder.as_markup()
+            f"⚖️ *Подход 1 из {sets}*\n\n"
+            f"Введите вес (кг) или '-' если без веса:"
         )
-        await state.set_state(WorkoutSessionStates.choosing_reps_method)
+        await state.set_state(WorkoutSessionStates.entering_set_data)
+        
     except ValueError:
         await message.answer("❌ Введите число")
-
 @router.callback_query(F.data == "weight_one")
 async def weight_one_method(callback: CallbackQuery, state: FSMContext):
     """Ввод одного веса для всех подходов"""
@@ -227,6 +297,66 @@ async def weight_each_method(callback: CallbackQuery, state: FSMContext):
     )
     await state.set_state(WorkoutSessionStates.entering_set_weights)
     await callback.answer()
+
+@router.message(WorkoutSessionStates.entering_set_data)
+async def process_set_data(message: Message, state: FSMContext):
+    """Обработка ввода данных для текущего подхода (сначала вес, потом повторения)"""
+    data = await state.get_data()
+    current_set = data['current_set']
+    total_sets = data['sets']
+    set_data = data['set_data']
+    
+    # Проверяем, что сейчас вводим - вес или повторения
+    current_entry = set_data[current_set-1]
+    
+    # Если вес ещё не введён
+    if current_entry['weight'] is None:
+        # Сохраняем вес
+        if message.text == '-':
+            current_entry['weight'] = None
+        else:
+            try:
+                weight = float(message.text)
+                current_entry['weight'] = weight
+            except ValueError:
+                await message.answer("❌ Введите число или '-'")
+                return
+        
+        # Спрашиваем повторения
+        await message.answer(
+            f"🔄 *Подход {current_set} из {total_sets}*\n\n"
+            f"Введите количество повторений:"
+        )
+        
+    else:
+        # Сохраняем повторения
+        try:
+            reps = int(message.text)
+            if reps <= 0:
+                raise ValueError
+            current_entry['reps'] = reps
+            
+            # Обновляем данные
+            set_data[current_set-1] = current_entry
+            await state.update_data(set_data=set_data)
+            
+            # Переходим к следующему подходу или завершаем
+            if current_set < total_sets:
+                current_set += 1
+                await state.update_data(current_set=current_set)
+                
+                # Спрашиваем вес для следующего подхода
+                await message.answer(
+                    f"⚖️ *Подход {current_set} из {total_sets}*\n\n"
+                    f"Введите вес (кг) или '-' если без веса:"
+                )
+            else:
+                # Все подходы введены - сохраняем упражнение
+                await save_exercise_from_set_data(state, message)
+                await show_workout_menu(message, state)
+                
+        except ValueError:
+            await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_set_reps)
 async def process_set_reps(message: Message, state: FSMContext):
