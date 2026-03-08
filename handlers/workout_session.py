@@ -179,16 +179,28 @@ async def show_workout_menu(message, state: FSMContext):
 async def save_workout(callback: CallbackQuery, state: FSMContext):
     """Сохранить тренировку и выйти"""
     user_id = callback.from_user.id
+    logger.info(f"💾 Попытка сохранения тренировки для пользователя {user_id}")
     
-    await save_workout_session(user_id, state)
+    try:
+        data = await state.get_data()
+        logger.info(f"📦 Данные тренировки: {data.get('exercises', [])}")
+        
+        await save_workout_session(user_id, state)
+        logger.info(f"✅ Тренировка сохранена в БД")
+        
+        await callback.message.edit_text(
+            "💾 *Тренировка сохранена!*\n\n"
+            "Вы можете вернуться к ней позже через меню тренировок.",
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="🏠 В ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
+            ).as_markup()
+        )
+        logger.info(f"✅ Сообщение отправлено пользователю")
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка сохранения: {e}")
+        await callback.message.answer(f"❌ Ошибка: {e}")
     
-    await callback.message.edit_text(
-        "💾 *Тренировка сохранена!*\n\n"
-        "Вы можете вернуться к ней позже через меню тренировок.",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="🏠 В ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
-        ).as_markup()
-    )
     await callback.answer()
 
 # ========== СОХРАНЕНИЕ И ЗАГРУЗКА СЕССИИ ==========
@@ -196,6 +208,7 @@ async def save_workout(callback: CallbackQuery, state: FSMContext):
 async def save_workout_session(user_id: int, state: FSMContext):
     """Сохраняет текущую тренировку в БД"""
     data = await state.get_data()
+    logger.info(f"💾 Сохранение для {user_id}, данные: {data}")
     
     # Сохраняем только нужные данные (исключаем временные)
     session_data = {
@@ -203,6 +216,8 @@ async def save_workout_session(user_id: int, state: FSMContext):
         'exercises': data.get('exercises', []),
         'start_time': datetime.now().isoformat()
     }
+    
+    logger.info(f"📦 session_data: {session_data}")
     
     await db.execute("""
         INSERT OR REPLACE INTO active_workout_sessions (user_id, session_data)
