@@ -1,4 +1,5 @@
 from aiogram import Router, F
+import json
 from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -73,25 +74,162 @@ class WorkoutSessionStates(StatesGroup):
 
 @router.callback_query(F.data == "start_workout")
 async def start_workout(callback: CallbackQuery, state: FSMContext):
-    await init_workout_tables()
-    
+    """Начало новой тренировки"""
     user_id = callback.from_user.id
+    
+    # Проверяем, есть ли сохранённая тренировка
+    if await load_workout_session(user_id, state):
+        # Спрашиваем, продолжать ли
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="✅ ПРОДОЛЖИТЬ", callback_data="continue_workout"),
+            InlineKeyboardButton(text="🆕 НАЧАТЬ ЗАНОВО", callback_data="new_workout")
+        )
+        
+        await callback.message.edit_text(
+            "💪 *У вас есть незавершённая тренировка!*\n\n"
+            "Хотите продолжить или начать новую?",
+            reply_markup=builder.as_markup()
+        )
+        await callback.answer()
+        return
+    
+    # Если нет сохранённой - начинаем новую
+    await start_new_workout(callback.message, state)
+    await callback.answer()
+
+async def start_new_workout(message, state: FSMContext):
+    """Начинает новую тренировку"""
+    user_id = message.chat.id
+    
+    # Создаём новую сессию в БД
     today = date.today().isoformat()
     current_time = datetime.now().strftime("%H:%M")
     
-    try:
-        await db.execute(
-            "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
-            (user_id, today, current_time)
-        )
-        result = await db.fetch_one("SELECT last_insert_rowid() as id")
-        session_id = result['id']
-        await state.update_data(session_id=session_id, exercises=[])
-        await show_workout_menu(callback.message, state)
-    except Exception as e:
-        logger.error(f"❌ Ошибка: {e}")
-        await callback.message.answer("❌ Ошибка создания тренировки")
+    await db.execute(
+        "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
+        (user_id, today, current_time)
+    )
+    
+    result = await db.fetch_one("SELECT last_insert_rowid() as id")
+    session_id = result['id']
+    
+    await state.update_data(
+        session_id=session_id,
+        exercises=[]
+    )
+    
+    await show_workout_menu(message, state)
+
+@router.callback_query(F.data == "continue_workout")
+async def continue_workout(callback: CallbackQuery, state: FSMContext):
+    """Продолжить сохранённую тренировку"""
+    await show_workout_menu(callback.message, state)
     await callback.answer()
+
+@router.callback_query(F.data == "new_workout")
+async def new_workout(callback: CallbackQuery, state: FSMContext):
+    """Начать новую тренировку (удаляя старую)"""
+    user_id = callback.from_user.id
+    await clear_workout_session(user_id)
+    await state.clear()
+    await start_new_workout(callback.message, state)
+    await callback.answer()
+
+async def show_workout_menu(message, state: FSMContext):
+    """Показать меню тренировки с кнопкой сохранения"""
+    data = await state.get_data()
+    exercises = data.get('exercises', [])
+    
+    text = "🏋️ *ТЕКУЩАЯ ТРЕНИРОВКА*\n\n"
+    
+    if exercises:
+        text += "*Упражнения:*\n"
+        for i, ex in enumerate(exercises, 1):
+            if ex['type'] == 'strength':
+                text += f"{i}. {ex['name']}: {ex['sets']}×{ex['reps_display']} ({ex['weight_display']})\n"
+                
+                # Детали по подходам
+                if 'set_data' in ex:
+                    for j, s in enumerate(ex['set_data'], 1):
+                        weight = f"{s['weight']} кг" if s['weight'] else "б/в"
+                        text += f"   {j}. {weight} × {s['reps']}\n"
+            elif ex['type'] == 'cardio':
+                text += f"{i}. {ex['name']}: {ex['duration']} мин, {ex['distance']} км\n"
+            else:
+                text += f"{i}. {ex['name']}: {ex['duration']} мин (растяжка)\n"
+    else:
+        text += "Пока нет упражнений. Добавьте первое!\n"
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_to_workout")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✅ ЗАВЕРШИТЬ", callback_data="finish_workout"),
+        InlineKeyboardButton(text="💾 СОХРАНИТЬ И ВЫЙТИ", callback_data="save_workout")
+    )
+    builder.row(
+        InlineKeyboardButton(text="❌ ОТМЕНИТЬ", callback_data="cancel_workout")
+    )
+    
+    await message.answer(text, reply_markup=builder.as_markup())
+
+@router.callback_query(F.data == "save_workout")
+async def save_workout(callback: CallbackQuery, state: FSMContext):
+    """Сохранить тренировку и выйти"""
+    user_id = callback.from_user.id
+    
+    await save_workout_session(user_id, state)
+    
+    await callback.message.edit_text(
+        "💾 *Тренировка сохранена!*\n\n"
+        "Вы можете вернуться к ней позже через меню тренировок.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="🏠 В ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
+        ).as_markup()
+    )
+    await callback.answer()
+
+# ========== СОХРАНЕНИЕ И ЗАГРУЗКА СЕССИИ ==========
+
+async def save_workout_session(user_id: int, state: FSMContext):
+    """Сохраняет текущую тренировку в БД"""
+    data = await state.get_data()
+    
+    # Сохраняем только нужные данные (исключаем временные)
+    session_data = {
+        'session_id': data.get('session_id'),
+        'exercises': data.get('exercises', []),
+        'start_time': datetime.now().isoformat()
+    }
+    
+    await db.execute("""
+        INSERT OR REPLACE INTO active_workout_sessions (user_id, session_data)
+        VALUES (?, ?)
+    """, (user_id, json.dumps(session_data)))
+    
+    logger.info(f"💾 Тренировка сохранена для пользователя {user_id}")
+
+async def load_workout_session(user_id: int, state: FSMContext):
+    """Загружает сохранённую тренировку"""
+    session = await db.fetch_one(
+        "SELECT session_data FROM active_workout_sessions WHERE user_id = ?",
+        (user_id,)
+    )
+    
+    if session:
+        data = json.loads(session['session_data'])
+        await state.update_data(**data)
+        return True
+    return False
+
+async def clear_workout_session(user_id: int):
+    """Очищает сохранённую тренировку"""
+    await db.execute(
+        "DELETE FROM active_workout_sessions WHERE user_id = ?",
+        (user_id,)
+    )
 
 async def show_workout_menu(message, state: FSMContext):
     """Показать меню тренировки с деталями"""
@@ -639,21 +777,35 @@ async def save_exercise(state: FSMContext, message: Message):
         logger.error(f"❌ Ошибка сохранения упражнения: {e}")
         
 from services.stats_updater import update_user_stats
+
 @router.callback_query(F.data == "finish_workout")
 async def finish_workout(callback: CallbackQuery, state: FSMContext):
+    """Завершение тренировки"""
     data = await state.get_data()
     session_id = data['session_id']
+    exercises = data.get('exercises', [])
+    
     await db.execute(
         "UPDATE workout_sessions SET end_time = ? WHERE id = ?",
         (datetime.now().strftime("%H:%M"), session_id)
     )
-    await callback.message.edit_text(
-        "✅ *Тренировка завершена!*\n\n💪 Отличная работа!",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
-        ).as_markup()
+    
+    # Очищаем сохранённую сессию
+    user_id = callback.from_user.id
+    await clear_workout_session(user_id)
+    
+    text = (
+        f"✅ *Тренировка завершена!*\n\n"
+        f"📊 Выполнено упражнений: {len(exercises)}\n"
+        f"💪 Отличная работа!"
     )
-    await update_user_stats(callback.from_user.id)
+    
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
+    )
+    
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await state.clear()
     await callback.answer()
 
