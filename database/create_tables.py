@@ -9,6 +9,17 @@ def create_missing_tables():
     conn = sqlite3.connect('fitness_bot.db')
     cursor = conn.cursor()
     
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS active_workout_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER UNIQUE NOT NULL,
+            session_data TEXT NOT NULL,
+            started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("✅ Таблица active_workout_sessions создана")
+
     # Таблица тренировок (сессий)
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS workout_sessions (
