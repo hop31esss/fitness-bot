@@ -475,10 +475,16 @@ async def process_set_data(message: Message, state: FSMContext):
                 await message.answer("❌ Введите число или '-'")
                 return
         
-        # Спрашиваем повторения
+        # Спрашиваем повторения с кнопкой выхода
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="⏸️ ПРИОСТАНОВИТЬ", callback_data="save_workout")
+        )
+        
         await message.answer(
             f"🔄 *Подход {current_set} из {total_sets}*\n\n"
-            f"Введите количество повторений:"
+            f"Введите количество повторений:",
+            reply_markup=builder.as_markup()
         )
         
     else:
@@ -498,10 +504,16 @@ async def process_set_data(message: Message, state: FSMContext):
                 current_set += 1
                 await state.update_data(current_set=current_set)
                 
-                # Спрашиваем вес для следующего подхода
+                # Спрашиваем вес для следующего подхода с кнопкой выхода
+                builder = InlineKeyboardBuilder()
+                builder.row(
+                    InlineKeyboardButton(text="⏸️ ПРИОСТАНОВИТЬ", callback_data="save_workout")
+                )
+                
                 await message.answer(
                     f"⚖️ *Подход {current_set} из {total_sets}*\n\n"
-                    f"Введите вес (кг) или '-' если без веса:"
+                    f"Введите вес (кг) или '-' если без веса:",
+                    reply_markup=builder.as_markup()
                 )
             else:
                 # Все подходы введены - сохраняем упражнение
