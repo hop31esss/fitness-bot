@@ -10,36 +10,71 @@ router = Router()
 
 @router.message(CommandStart())
 async def cmd_start(message: Message):
-    """Красивое приветствие"""
+    """Обработчик команды /start с поддержкой рефералов"""
     user_id = message.from_user.id
-    username = message.from_user.username
-    first_name = message.from_user.first_name
+    args = message.text.split()
     
-    # Регистрация пользователя
+    # Регистрируем пользователя
     await db.execute(
         """INSERT OR REPLACE INTO users 
-        (user_id, username, first_name) 
-        VALUES (?, ?, ?)""",
-        (user_id, username, first_name)
+        (user_id, username, first_name, last_name) 
+        VALUES (?, ?, ?, ?)""",
+        (user_id, message.from_user.username, 
+         message.from_user.first_name, message.from_user.last_name)
     )
     
-    await update_user_stats(user_id)
+    # Проверяем реферальный код
+    if len(args) > 1:
+        code = args[1]
+        
+        # Находим пригласившего
+        referrer = await db.fetch_one(
+            "SELECT user_id FROM referral_codes WHERE code = ?",
+            (code,)
+        )
+        
+        if referrer and referrer['user_id'] != user_id:
+            # Проверяем, не был ли уже приглашён
+            existing = await db.fetch_one(
+                "SELECT id FROM referrals WHERE referred_id = ?",
+                (user_id,)
+            )
+            
+            if not existing:
+                # Сохраняем приглашение
+                await db.execute("""
+                    INSERT INTO referrals (referrer_id, referred_id, code) 
+                    VALUES (?, ?, ?)
+                """, (referrer['user_id'], user_id, code))
+                
+                # Даём месяц премиума пригласившему
+                from handlers.referral import add_premium_month
+                await add_premium_month(referrer['user_id'])
+                
+                # Уведомляем пригласившего
+                try:
+                    await message.bot.send_message(
+                        referrer['user_id'],
+                        f"🎉 *Новый друг!*\n\n"
+                        f"{message.from_user.first_name} присоединился по вашей ссылке!\n"
+                        f"✅ Вы получили +30 дней премиума!"
+                    )
+                except:
+                    pass
     
-    # Проверяем премиум-статус
+    # Показываем главное меню
     user = await db.fetch_one(
         "SELECT is_subscribed FROM users WHERE user_id = ?",
         (user_id,)
     )
     is_premium = user and user['is_subscribed'] if user else False
     
-    # Красивое приветствие
     welcome_text = (
-        f"🌟 *Добро пожаловать, {first_name}!*\n\n"
-        "Я ваш персональный фитнес-помощник. Помогу достичь ваших целей! 💪\n\n"
+        f"🌟 *Добро пожаловать, {message.from_user.first_name}!*\n\n"
+        "Я ваш персональный фитнес-помощник.\n\n"
         "▫️ Записывайте тренировки\n"
         "▫️ Отслеживайте прогресс\n"
-        "▫️ Соревнуйтесь с друзьями\n"
-        "▫️ Получайте AI-советы\n\n"
+        "▫️ Приглашайте друзей и получайте премиум!\n\n"
         "👇 *Выберите действие:*"
     )
     
