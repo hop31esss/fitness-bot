@@ -34,7 +34,8 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
 
     # ========== ДРУЗЬЯ ДЛЯ ВСЕХ ==========
     builder.row(
-        InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu")
+        InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
+        InlineKeyboardButton(text="🤝 РЕФЕРАЛЫ", callback_data="referral")
     )    
     
     # ========== ДНЕВНИК ==========
