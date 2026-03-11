@@ -7,6 +7,11 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8391767389:AAFjf5bQDvi12-DbE3pbATzmYdjjki0Jq
 # ID администратора (ВАШ ID)
 ADMIN_ID = 385450652
 
+# FatSecret API
+FATSECRET_CLIENT_ID = os.getenv("FATSECRET_CLIENT_ID", "063f6d1df26c4b97a67bc164faea20a5")
+FATSECRET_CLIENT_SECRET = os.getenv("FATSECRET_CLIENT_SECRET", "40780f6509c14cdb95e7915d29920a6c")
+FATSECRET_ENABLED = bool(FATSECRET_CLIENT_ID)
+
 # Список администраторов (для совместимости)
 ADMIN_IDS = [385450652]
 
