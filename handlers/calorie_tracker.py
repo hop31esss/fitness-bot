@@ -6,6 +6,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date, timedelta
 import logging
 
+from config import FATSECRET_CLIENT_ID, FATSECRET_CLIENT_SECRET, USE_FATSECRET
 from services.fatsecret_service import FatSecretService
 from database.base import db
 from config import ADMIN_ID
@@ -184,9 +185,9 @@ async def calorie_tracker_menu(callback: CallbackQuery):
         InlineKeyboardButton(text="📖 БАЗА ПРОДУКТОВ", callback_data="food_database"),
         InlineKeyboardButton(text="📊 ИСТОРИЯ", callback_data="calorie_history")
     )
-    builder.row(
-        InlineKeyboardButton(text="🔍 ПОИСК ПРОДУКТОВ", callback_data="search_food")
-    )
+    #builder.row(
+    #    InlineKeyboardButton(text="🔍 ПОИСК ПРОДУКТОВ", callback_data="search_food")
+    #)
     builder.row(
         InlineKeyboardButton(text="◀️ НАЗАД", callback_data="back_to_main")
     )
@@ -670,11 +671,20 @@ async def calorie_history(callback: CallbackQuery):
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()    
-# Инициализация (добавьте ключи в config.py)
-fatsecret = FatSecretService(
-    client_id=FATSECRET_CONSUMER_KEY,
-    client_secret=FATSECRET_CONSUMER_SECRET
-)
+
+if USE_FATSECRET:
+    from services.fatsecret_service import FatSecretService
+    fatsecret = FatSecretService(
+        client_id=FATSECRET_CLIENT_ID,
+        client_secret=FATSECRET_CLIENT_SECRET
+    )
+else:
+    # Заглушка
+    fatsecret = None
+
+# Временно отключаем FatSecret
+USE_FATSECRET = False
+
 
 @router.callback_query(F.data == "search_food")
 async def search_food(callback: CallbackQuery, state: FSMContext):
