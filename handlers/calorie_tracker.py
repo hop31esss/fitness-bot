@@ -29,6 +29,7 @@ class CalorieStates(StatesGroup):
     waiting_food_protein = State()
     waiting_food_fat = State()
     waiting_food_carbs = State()
+    waiting_search_query = State()
 
 # ================ ПРОВЕРКА ПРЕМИУМ ================
 
