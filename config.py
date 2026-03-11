@@ -2,7 +2,7 @@ import os
 from typing import List
 
 # Токен бота
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8391767389:AAFjf5bQDvi12-DbE3pbATzmYdjjki0Jq0A")
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8391767389:AAE76LxI2ckpN1FAWcmL7YusfHRVmNRVLoA")
 
 # ID администратора (ВАШ ID)
 ADMIN_ID = 385450652
