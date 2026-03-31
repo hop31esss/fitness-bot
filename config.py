@@ -4,6 +4,8 @@ from typing import List
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения
+# override=False: по умолчанию предпочитаем уже заданные env.
+# Но если BOT_TOKEN выглядит неверным (например, placeholder), ниже сделаем fallback на .env с override=True.
 load_dotenv()
 
 # Токен бота
@@ -17,13 +19,26 @@ if BOT_TOKEN and BOT_TOKEN[0] == BOT_TOKEN[-1] and BOT_TOKEN[0] in ("'", '"'):
     BOT_TOKEN = BOT_TOKEN[1:-1].strip()
 
 _token_re = re.compile(r"^\d+:[A-Za-z0-9_-]{35}$")
-if not _token_re.match(BOT_TOKEN):
-    safe_prefix = BOT_TOKEN[:5] if BOT_TOKEN else ""
-    safe_len = len(BOT_TOKEN) if BOT_TOKEN else 0
-    raise ValueError(
-        f"BOT_TOKEN имеет неверный формат. len={safe_len}, prefix={safe_prefix!r}. "
-        "Проверьте переменную окружения/ .env (без кавычек и пробелов)."
-    )
+
+def _validate_or_none(token: str) -> bool:
+    return bool(token) and bool(_token_re.match(token))
+
+if not _validate_or_none(BOT_TOKEN):
+    # Fallback: если compose присвоил placeholder в env, но .env внутри контейнера корректный,
+    # перезагрузим .env с override=True и попробуем ещё раз.
+    load_dotenv(override=True)
+    BOT_TOKEN_RAW = os.getenv("BOT_TOKEN")
+    BOT_TOKEN = BOT_TOKEN_RAW.strip() if BOT_TOKEN_RAW else ""
+    if BOT_TOKEN and BOT_TOKEN[0] == BOT_TOKEN[-1] and BOT_TOKEN[0] in ("'", '"'):
+        BOT_TOKEN = BOT_TOKEN[1:-1].strip()
+
+    if not _validate_or_none(BOT_TOKEN):
+        safe_prefix = BOT_TOKEN[:5] if BOT_TOKEN else ""
+        safe_len = len(BOT_TOKEN) if BOT_TOKEN else 0
+        raise ValueError(
+            f"BOT_TOKEN имеет неверный формат. len={safe_len}, prefix={safe_prefix!r}. "
+            "Проверьте переменную окружения/ .env (без кавычек и пробелов)."
+        )
 
 # ID администратора (ВАШ ID)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "385450652"))
