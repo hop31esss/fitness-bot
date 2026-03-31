@@ -270,6 +270,56 @@ async def create_tables():
     """)
     logger.info("✅ Таблица referral_codes создана")
 
+    # Таблицы сессий тренировок (факт выполнения и planned/actual)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS workout_sessions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            start_time TEXT,
+            end_time TEXT,
+            notes TEXT,
+            template_id INTEGER,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS workout_exercises (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id INTEGER NOT NULL,
+            exercise_name TEXT NOT NULL,
+            exercise_type TEXT DEFAULT 'strength',
+            sets INTEGER,
+            reps INTEGER,
+            weight REAL,
+            planned_sets INTEGER,
+            planned_reps INTEGER,
+            planned_weight REAL,
+            duration INTEGER,
+            distance REAL,
+            notes TEXT,
+            order_num INTEGER,
+            completed BOOLEAN DEFAULT FALSE
+        )
+    """)
+    logger.info("✅ Таблицы workout_sessions/workout_exercises созданы")
+
+    # Идемпотентные миграции колонок
+    migration_queries = [
+        "ALTER TABLE workout_sessions ADD COLUMN template_id INTEGER",
+        "ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE workout_exercises ADD COLUMN planned_sets INTEGER",
+        "ALTER TABLE workout_exercises ADD COLUMN planned_reps INTEGER",
+        "ALTER TABLE workout_exercises ADD COLUMN planned_weight REAL",
+    ]
+    for query in migration_queries:
+        try:
+            await db.execute(query)
+        except Exception as exc:
+            text = str(exc).lower()
+            if "duplicate column name" not in text and "already exists" not in text:
+                raise
+
 # Таблица приглашений
     await db.execute("""
         CREATE TABLE IF NOT EXISTS referrals (

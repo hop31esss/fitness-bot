@@ -50,12 +50,56 @@ class TemplateStates(StatesGroup):
     waiting_name = State()
     waiting_edit_name = State()
     waiting_edit_exercises = State()
+    waiting_manual_exercise_name = State()
+    waiting_manual_sets = State()
+    waiting_manual_reps = State()
+    waiting_manual_weight = State()
 
 class TemplateCopyStates(StatesGroup):
     waiting_new_name = State()
 
 class TemplateShareStates(StatesGroup):
     waiting_friend_id = State()
+
+
+def _normalize_db_exercise(ex: dict) -> dict:
+    """Приводит запись workout_exercises к формату шаблона."""
+    return {
+        "name": ex.get("exercise_name"),
+        "type": ex.get("exercise_type", "strength"),
+        "sets": int(ex.get("sets") or 0),
+        "reps": int(ex.get("reps") or 0),
+        "weight": ex.get("weight"),
+    }
+
+
+def _normalize_state_exercise(ex: dict) -> dict:
+    """Приводит exercise из FSM к формату шаблона."""
+    if ex.get("type") != "strength":
+        return {"name": ex.get("name", "Упражнение"), "type": ex.get("type", "strength")}
+    reps = ex.get("reps")
+    if reps is None and ex.get("reps_list"):
+        reps = ex["reps_list"][0]
+    return {
+        "name": ex.get("name", "Упражнение"),
+        "type": "strength",
+        "sets": int(ex.get("sets") or 0),
+        "reps": int(reps or 0),
+        "weight": ex.get("weight"),
+    }
+
+
+async def _load_session_exercises(session_id: int) -> list:
+    rows = await db.fetch_all(
+        """
+        SELECT exercise_name, exercise_type, sets, reps, weight
+        FROM workout_exercises
+        WHERE session_id = ?
+        ORDER BY order_num ASC, id ASC
+        """,
+        (session_id,),
+    )
+    return [_normalize_db_exercise(row) for row in rows]
 
 # ========== ГЛАВНОЕ МЕНЮ ШАБЛОНОВ ==========
 
@@ -82,9 +126,18 @@ async def templates_menu(callback: CallbackQuery):
     builder.row(
         InlineKeyboardButton(text="➕ СОЗДАТЬ ИЗ ТЕКУЩЕЙ", callback_data="template_create_from_current")
     )
+    builder.row(
+        InlineKeyboardButton(text="🧩 СОЗДАТЬ ВРУЧНУЮ", callback_data="template_create_manual")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🕘 СОЗДАТЬ ИЗ ИСТОРИИ", callback_data="template_create_from_history")
+    )
     if templates:
         builder.row(
             InlineKeyboardButton(text="📋 ВЫБРАТЬ", callback_data="template_list")
+        )
+        builder.row(
+            InlineKeyboardButton(text="🚀 НАЧАТЬ ПО ПРОГРАММЕ", callback_data="template_start_list")
         )
         builder.row(
             InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ", callback_data="template_edit_list")
@@ -101,12 +154,27 @@ async def templates_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "template_create_from_current")
 async def create_template_from_current(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
-    exercises = data.get('exercises', [])
-    
+    exercises = []
+    session_id = data.get("session_id")
+
+    if session_id:
+        exercises = await _load_session_exercises(session_id)
     if not exercises:
-        await callback.answer("❌ Сначала начните тренировку", show_alert=True)
+        exercises = [_normalize_state_exercise(ex) for ex in data.get("exercises", []) if ex.get("name")]
+
+    if not exercises:
+        await callback.message.edit_text(
+            "❌ В текущей тренировке пока нет сохранённых упражнений.\n\n"
+            "Сначала добавьте хотя бы одно упражнение или создайте программу вручную.",
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="🧩 СОЗДАТЬ ВРУЧНУЮ", callback_data="template_create_manual"),
+                InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates")
+            ).as_markup()
+        )
+        await callback.answer()
         return
-    
+
+    await state.update_data(template_source_exercises=exercises)
     await callback.message.edit_text(
         "📝 *Назовите программу*\n\n"
         "Например: «Тяжёлая неделя», «Грудь‑трицепс», «Ноги‑плечи»"
@@ -118,7 +186,23 @@ async def create_template_from_current(callback: CallbackQuery, state: FSMContex
 async def save_template_name(message: Message, state: FSMContext):
     name = message.text.strip()
     data = await state.get_data()
-    exercises = data.get('exercises', [])
+    manual_mode = 'manual_exercises' in data and not data.get('template_source_exercises')
+    if manual_mode:
+        await state.update_data(manual_template_name=name, pending_template_name=name)
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="➕ ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="template_manual_add_exercise")
+        )
+        builder.row(
+            InlineKeyboardButton(text="✅ СОХРАНИТЬ ПРОГРАММУ", callback_data="template_manual_save")
+        )
+        await message.answer(
+            f"🧩 Программа «{name}» создана. Теперь добавьте упражнения.",
+            reply_markup=builder.as_markup()
+        )
+        return
+
+    exercises = data.get('template_source_exercises') or data.get('manual_exercises') or data.get('exercises', [])
     user_id = message.from_user.id
     
     await db.execute(
@@ -133,6 +217,161 @@ async def save_template_name(message: Message, state: FSMContext):
         ).as_markup()
     )
     await state.clear()
+
+
+@router.callback_query(F.data == "template_create_from_history")
+async def template_create_from_history(callback: CallbackQuery):
+    sessions = await db.fetch_all(
+        """
+        SELECT ws.id, ws.date, ws.start_time, COUNT(we.id) as exercises_count
+        FROM workout_sessions ws
+        LEFT JOIN workout_exercises we ON we.session_id = ws.id
+        WHERE ws.user_id = ?
+        GROUP BY ws.id
+        ORDER BY ws.id DESC
+        LIMIT 10
+        """,
+        (callback.from_user.id,),
+    )
+    if not sessions:
+        await callback.answer("❌ История тренировок пуста", show_alert=True)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for session in sessions:
+        label = f"🗓️ {session['date']} {session.get('start_time') or ''} ({session['exercises_count']} упр.)"
+        builder.row(
+            InlineKeyboardButton(
+                text=label.strip(),
+                callback_data=f"template_history_pick:{session['id']}"
+            )
+        )
+    builder.row(InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates"))
+    await callback.message.edit_text("Выберите тренировку из истории:", reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("template_history_pick:"))
+async def template_history_pick(callback: CallbackQuery, state: FSMContext):
+    session_id = int(callback.data.split(":")[1])
+    exercises = await _load_session_exercises(session_id)
+    if not exercises:
+        await callback.answer("❌ В этой тренировке нет упражнений", show_alert=True)
+        return
+    await state.update_data(template_source_exercises=exercises)
+    await callback.message.edit_text("📝 Введите название новой программы из истории:")
+    await state.set_state(TemplateStates.waiting_name)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "template_create_manual")
+async def template_create_manual(callback: CallbackQuery, state: FSMContext):
+    await state.update_data(manual_exercises=[])
+    await callback.message.edit_text("📝 Введите название программы:")
+    await state.set_state(TemplateStates.waiting_name)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "template_manual_add_exercise")
+async def template_manual_add_exercise(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text("🏋️ Введите название упражнения:")
+    await state.set_state(TemplateStates.waiting_manual_exercise_name)
+    await callback.answer()
+
+
+@router.message(TemplateStates.waiting_manual_exercise_name)
+async def template_manual_exercise_name(message: Message, state: FSMContext):
+    await state.update_data(manual_current_name=message.text.strip())
+    await message.answer("Введите количество подходов:")
+    await state.set_state(TemplateStates.waiting_manual_sets)
+
+
+@router.message(TemplateStates.waiting_manual_sets)
+async def template_manual_sets(message: Message, state: FSMContext):
+    try:
+        sets = int(message.text)
+        if sets <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число подходов")
+        return
+    await state.update_data(manual_current_sets=sets)
+    await message.answer("Введите количество повторений:")
+    await state.set_state(TemplateStates.waiting_manual_reps)
+
+
+@router.message(TemplateStates.waiting_manual_reps)
+async def template_manual_reps(message: Message, state: FSMContext):
+    try:
+        reps = int(message.text)
+        if reps <= 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите положительное число повторений")
+        return
+    await state.update_data(manual_current_reps=reps)
+    await message.answer("Введите вес (кг) или '-' если без веса:")
+    await state.set_state(TemplateStates.waiting_manual_weight)
+
+
+@router.message(TemplateStates.waiting_manual_weight)
+async def template_manual_weight(message: Message, state: FSMContext):
+    raw = message.text.strip()
+    if raw == "-":
+        weight = None
+    else:
+        try:
+            weight = float(raw.replace(",", "."))
+        except ValueError:
+            await message.answer("❌ Введите число или '-'")
+            return
+
+    data = await state.get_data()
+    exercises = data.get("manual_exercises", [])
+    exercises.append({
+        "name": data.get("manual_current_name", "Упражнение"),
+        "type": "strength",
+        "sets": data.get("manual_current_sets", 0),
+        "reps": data.get("manual_current_reps", 0),
+        "weight": weight,
+    })
+    await state.update_data(manual_exercises=exercises)
+
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="➕ ЕЩЁ УПРАЖНЕНИЕ", callback_data="template_manual_add_exercise"),
+        InlineKeyboardButton(text="✅ СОХРАНИТЬ ПРОГРАММУ", callback_data="template_manual_save")
+    )
+    await message.answer(
+        f"✅ Добавлено. Упражнений в программе: {len(exercises)}",
+        reply_markup=builder.as_markup()
+    )
+
+
+@router.callback_query(F.data == "template_manual_save")
+async def template_manual_save(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    name = data.get("manual_template_name") or data.get("pending_template_name")
+    exercises = data.get("manual_exercises", [])
+    if not name:
+        await callback.answer("❌ Сначала укажите название программы", show_alert=True)
+        return
+    if not exercises:
+        await callback.answer("❌ Добавьте хотя бы одно упражнение", show_alert=True)
+        return
+
+    await db.execute(
+        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
+        (callback.from_user.id, name, json.dumps(exercises, ensure_ascii=False))
+    )
+    await callback.message.edit_text(
+        f"✅ Программа «{name}» сохранена.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates")
+        ).as_markup()
+    )
+    await state.clear()
+    await callback.answer()
 
 # ========== ПРИМЕНЕНИЕ ШАБЛОНА ==========
 
@@ -161,6 +400,75 @@ async def template_list(callback: CallbackQuery):
         "Выберите программу для добавления в текущую тренировку:",
         reply_markup=builder.as_markup()
     )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "template_start_list")
+async def template_start_list(callback: CallbackQuery):
+    templates = await db.fetch_all(
+        "SELECT id, name FROM workout_templates WHERE user_id = ? ORDER BY created_at DESC",
+        (callback.from_user.id,),
+    )
+    if not templates:
+        await callback.answer("❌ У вас пока нет программ", show_alert=True)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for t in templates:
+        builder.row(
+            InlineKeyboardButton(text=f"🚀 {t['name']}", callback_data=f"start_template:{t['id']}")
+        )
+    builder.row(InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates"))
+    await callback.message.edit_text("Выберите программу для старта тренировки:", reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("start_template:"))
+async def start_template_workout(callback: CallbackQuery, state: FSMContext):
+    template_id = int(callback.data.split(":")[1])
+    template = await db.fetch_one(
+        "SELECT id, name, exercises FROM workout_templates WHERE id = ? AND user_id = ?",
+        (template_id, callback.from_user.id),
+    )
+    if not template:
+        await callback.answer("❌ Программа не найдена", show_alert=True)
+        return
+
+    today = datetime.now().date().isoformat()
+    current_time = datetime.now().strftime("%H:%M")
+    await db.execute(
+        "INSERT INTO workout_sessions (user_id, date, start_time, template_id) VALUES (?, ?, ?, ?)",
+        (callback.from_user.id, today, current_time, template_id),
+    )
+    row = await db.fetch_one("SELECT last_insert_rowid() as id")
+    session_id = row["id"]
+
+    planned = json.loads(template["exercises"])
+    exercises = []
+    for ex in planned:
+        if ex.get("type") == "strength":
+            weight = ex.get("weight")
+            exercises.append({
+                "name": ex.get("name"),
+                "type": "strength",
+                "sets": ex.get("sets"),
+                "reps": ex.get("reps"),
+                "weight": weight,
+                "reps_display": str(ex.get("reps")),
+                "weight_display": f"{weight} кг" if weight else "б/в",
+                "planned_sets": ex.get("sets"),
+                "planned_reps": ex.get("reps"),
+                "planned_weight": weight,
+            })
+
+    await state.update_data(
+        session_id=session_id,
+        template_id=template_id,
+        exercises=exercises
+    )
+    from handlers.workout_session import show_workout_menu
+    await callback.message.answer(f"🚀 Тренировка по программе «{template['name']}» начата.")
+    await show_workout_menu(callback.message, state)
     await callback.answer()
 
 @router.callback_query(F.data.startswith("apply_template:"))

@@ -1,20 +1,25 @@
 import os
 from typing import List
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения
+load_dotenv()
 
 # Токен бота
-BOT_TOKEN = "8391767389:AAE82Zw2zcCYCM_iInlIh1xLwd-26ucQmCc"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN не найден в переменных окружения!")
 
 # ID администратора (ВАШ ID)
-ADMIN_ID = 385450652
+ADMIN_ID = int(os.getenv("ADMIN_ID", "385450652"))
 
-# FatSecret API (ваши реальные ключи)
-FATSECRET_CLIENT_ID = "063f6d1df26c4b97a67bc164faea20a5"
-FATSECRET_CLIENT_SECRET = "40780f6509c14cdb95e7915d29920a6c"
-USE_FATSECRET = True  # или False, если хотите отключить
-
+# FatSecret API
+FATSECRET_CLIENT_ID = os.getenv("FATSECRET_CLIENT_ID")
+FATSECRET_CLIENT_SECRET = os.getenv("FATSECRET_CLIENT_SECRET")
+USE_FATSECRET = os.getenv("USE_FATSECRET", "false").lower() == "true"
 
 # Список администраторов (для совместимости)
-ADMIN_IDS = [385450652]
+ADMIN_IDS = [ADMIN_ID]
 
 # Часовой пояс сервера (например 'Europe/Moscow', 'Asia/Yekaterinburg', 'UTC')
 SERVER_TIMEZONE = os.getenv("SERVER_TIMEZONE", "Europe/Moscow")
@@ -30,16 +35,16 @@ STARS_PRICE = 20  # Цена в Telegram Stars (минимально 1 Star)
 SUBSCRIPTION_DAYS = 30  # Дней действует подписка
 
 # Настройки ЮKassa
-YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID", "1283021")  # из личного кабинета ЮKassa
-YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY", "live_Ih5mldGYVTSFw0rbi1ASoxjP7DqY9HryMTSq6WbR5yA")  # из личного кабинета
-YOOKASSA_PROVIDER_TOKEN = os.getenv("YOOKASSA_PROVIDER_TOKEN", "390540012:LIVE:90312")  # от @BotFather
+YOOKASSA_SHOP_ID = os.getenv("YOOKASSA_SHOP_ID")
+YOOKASSA_SECRET_KEY = os.getenv("YOOKASSA_SECRET_KEY")
+YOOKASSA_PROVIDER_TOKEN = os.getenv("YOOKASSA_PROVIDER_TOKEN")
 
 # Настройки базы данных
 DATABASE_URL = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///fitness_bot.db")
 
-# OpenAI API ключ (получите на platform.openai.com)
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "sk-aitunnel-dAut1vwt4gXAHGjwqXJ621cvxLpJ1kJP")  # ВСТАВЬТЕ СВОЙ КЛЮЧ!
-OPENAI_ENABLED = True  # Включаем OpenAI
+# OpenAI API ключ
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_ENABLED = os.getenv("OPENAI_ENABLED", "false").lower() == "true"
 # Настройки экспорта
 EXPORT_PATH = os.getenv("EXPORT_PATH", "exports")
 
@@ -47,6 +52,9 @@ EXPORT_PATH = os.getenv("EXPORT_PATH", "exports")
 os.makedirs(EXPORT_PATH, exist_ok=True)
 os.makedirs("backups", exist_ok=True)
 
+# AITunnel API (для работы в РФ)
+AITUNNEL_API_KEY = os.getenv("AITUNNEL_API_KEY")
+
 # GigaChat API (Российский аналог OpenAI)
-GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_CREDENTIALS", "")  # Client ID:Client Secret
+GIGACHAT_CREDENTIALS = os.getenv("GIGACHAT_CREDENTIALS")
 GIGACHAT_ENABLED = bool(GIGACHAT_CREDENTIALS)

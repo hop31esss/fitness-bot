@@ -1,9 +1,19 @@
 import asyncio
 import sys
+import os
+from dotenv import load_dotenv
 from aiogram import Bot
 
-# ВСТАВЬТЕ СЮДА НОВЫЙ ТОКЕН НАПРЯМУЮ
-TOKEN = "8391767389:AAE76LxI2ckpN1FAWcmL7YusfHRVmNRVLoA"  # Замените на ваш новый токен
+# Загружаем переменные окружения
+load_dotenv(override=True)
+
+# Получаем токен из переменных окружения
+TOKEN = os.getenv("BOT_TOKEN")
+
+if not TOKEN:
+    print("❌ Ошибка: BOT_TOKEN не найден в переменных окружения!")
+    print("💡 Создайте .env файл и добавьте BOT_TOKEN=your_token_here")
+    sys.exit(1)
 
 async def check():
     print(f"🔍 Проверяю токен: {TOKEN[:15]}...")

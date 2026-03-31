@@ -32,11 +32,10 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
             InlineKeyboardButton(text="👑 ПРЕМИУМ (150₽/мес)", callback_data="show_premium_info")
         )
 
-    # ========== ДРУЗЬЯ ДЛЯ ВСЕХ ==========
+    # ========== СОЦИАЛЬНОЕ (ДРУЗЬЯ СКРЫТЫ ИЗ МЕНЮ) ==========
     builder.row(
-        InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
         InlineKeyboardButton(text="🤝 РЕФЕРАЛЫ", callback_data="referral")
-    )    
+    )
     
     # ========== ДНЕВНИК ==========
     builder.row(
@@ -57,9 +56,8 @@ def get_main_keyboard(user_id: int = None, is_premium: bool = False) -> InlineKe
         InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
     )
     
-    # ========== ИНСТРУМЕНТЫ ==========
+    # ========== ИНСТРУМЕНТЫ (ТАЙМЕР СКРЫТ ИЗ МЕНЮ) ==========
     builder.row(
-        InlineKeyboardButton(text="⏱️ ТАЙМЕР", callback_data="timer"),
         InlineKeyboardButton(text="📅 КАЛЕНДАРЬ", callback_data="calendar")
     )
     

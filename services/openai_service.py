@@ -2,16 +2,16 @@ import openai
 import logging
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
-import os
+from config import OPENAI_API_KEY, AITUNNEL_API_KEY, OPENAI_ENABLED
 
 logger = logging.getLogger(__name__)
 
 class OpenAIService:
     def __init__(self):
         # Настройки для AITUNNEL (работает в РФ)
-        self.api_key = os.getenv("AITUNNEL_API_KEY", "sk-aitunnel-dAut1vwt4gXAHGjwqXJ621cvxLpJ1kJP")
+        self.api_key = AITUNNEL_API_KEY
         self.base_url = "https://api.aitunnel.ru/v1"
-        self.enabled = bool(self.api_key)
+        self.enabled = OPENAI_ENABLED and bool(self.api_key)
         
         if self.enabled:
             try:
@@ -23,6 +23,8 @@ class OpenAIService:
             except Exception as e:
                 logger.error(f"❌ Ошибка инициализации AITUNNEL: {e}")
                 self.enabled = False
+        else:
+            logger.warning("⚠️ OpenAI сервис отключен - отсутствует API ключ")
     
     async def get_daily_tip(self, user_data: Dict, last_workouts: List[Dict]) -> Optional[str]:
         """Персональный совет на сегодня (на основе последних тренировок)"""

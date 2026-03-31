@@ -12,6 +12,36 @@ from database.base import db
 router = Router()
 logger = logging.getLogger(__name__)
 
+
+async def persist_session_exercises_from_state(session_id: int, exercises: list):
+    """Перезаписывает упражнения сессии актуальными данными из state."""
+    await db.execute("DELETE FROM workout_exercises WHERE session_id = ?", (session_id,))
+    rows = []
+    for i, ex in enumerate(exercises, start=1):
+        if ex.get("type") != "strength":
+            continue
+        rows.append((
+            session_id,
+            ex.get("name"),
+            ex.get("type", "strength"),
+            ex.get("sets"),
+            ex.get("reps"),
+            ex.get("weight"),
+            ex.get("planned_sets"),
+            ex.get("planned_reps"),
+            ex.get("planned_weight"),
+            i,
+        ))
+    if rows:
+        await db.execute_many(
+            """
+            INSERT INTO workout_exercises
+            (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            rows,
+        )
+
 async def init_workout_tables():
     """Создание таблиц для тренировок"""
     try:
@@ -37,6 +67,9 @@ async def init_workout_tables():
                 sets INTEGER,
                 reps INTEGER,
                 weight REAL,
+                planned_sets INTEGER,
+                planned_reps INTEGER,
+                planned_weight REAL,
                 duration INTEGER,
                 distance REAL,
                 notes TEXT,
@@ -44,14 +77,20 @@ async def init_workout_tables():
             )
         """)
         logger.info("✅ Таблица workout_exercises создана")
+        await db.execute("ALTER TABLE workout_sessions ADD COLUMN template_id INTEGER")
+        logger.info("✅ Колонка 'template_id' добавлена")
         await db.execute("""
             ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE
         """)
         logger.info("✅ Колонка 'completed' добавлена")
+        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_sets INTEGER")
+        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_reps INTEGER")
+        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_weight REAL")
+        logger.info("✅ Planned-колонки добавлены")
         
     except Exception as e:
         # Если колонка уже существует - игнорируем ошибку
-        if "duplicate column name" not in str(e):
+        if "duplicate column name" not in str(e).lower() and "already exists" not in str(e).lower():
             logger.error(f"❌ Ошибка: {e}")
         return True
     except Exception as e:
@@ -71,6 +110,7 @@ class WorkoutSessionStates(StatesGroup):
     entering_weight = State()         # для одного веса
     entering_duration = State()
     entering_distance = State()
+    editing_exercise_value = State()
 
 @router.callback_query(F.data == "start_workout")
 async def start_workout(callback: CallbackQuery, state: FSMContext):
@@ -136,8 +176,8 @@ async def new_workout(callback: CallbackQuery, state: FSMContext):
     await start_new_workout(callback.message, state)
     await callback.answer()
 
-async def show_workout_menu(message, state: FSMContext):
-    """Показать меню тренировки с кнопкой сохранения"""
+async def _show_workout_menu_legacy(message, state: FSMContext):
+    """Legacy версия меню тренировки (не используется)."""
     data = await state.get_data()
     exercises = data.get('exercises', [])
     
@@ -250,8 +290,11 @@ async def show_workout_menu(message, state: FSMContext):
     """Показать меню тренировки с деталями"""
     data = await state.get_data()
     exercises = data.get('exercises', [])
+    template_id = data.get("template_id")
     
     text = "🏋️ *ТЕКУЩАЯ ТРЕНИРОВКА*\n\n"
+    if template_id:
+        text += "📚 Режим: по программе\n\n"
     
     if exercises:
         text += "*Упражнения:*\n"
@@ -279,6 +322,10 @@ async def show_workout_menu(message, state: FSMContext):
     builder.row(
         InlineKeyboardButton(text="➕ ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_to_workout")
     )
+    if exercises:
+        builder.row(
+            InlineKeyboardButton(text="✏️ ИЗМЕНИТЬ УПРАЖНЕНИЯ", callback_data="edit_workout_exercises")
+        )
     builder.row(
         InlineKeyboardButton(text="✅ ЗАВЕРШИТЬ ТРЕНИРОВКУ", callback_data="finish_workout"),
         InlineKeyboardButton(text="❌ ОТМЕНИТЬ", callback_data="cancel_workout")
@@ -334,10 +381,11 @@ async def save_exercise_from_set_data(state: FSMContext, message: Message):
             
             await db.execute("""
                 INSERT INTO workout_exercises 
-                (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (session_id, exercise['name'], 'strength', 
                   exercise['sets'], avg_reps, avg_weight,
+                  exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
                   order_num))
                   
         logger.info(f"✅ Упражнение {exercise['name']} сохранено")
@@ -659,10 +707,11 @@ async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
     
     await db.execute("""
         INSERT INTO workout_exercises 
-        (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     """, (session_id, exercise['name'], 'strength', 
           exercise['sets'], exercise['reps'], avg_weight,
+          exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
           order_num))
     
     # Показываем детали
@@ -779,10 +828,11 @@ async def save_exercise(state: FSMContext, message: Message):
             
             await db.execute("""
                 INSERT INTO workout_exercises 
-                (session_id, exercise_name, exercise_type, sets, reps, weight, order_num)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (session_id, exercise['name'], 'strength', 
                   exercise['sets'], avg_reps, avg_weight,
+                  exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
                   order_num))
         else:
             # кардио и растяжка без изменений
@@ -800,6 +850,8 @@ async def finish_workout(callback: CallbackQuery, state: FSMContext):
     data = await state.get_data()
     session_id = data['session_id']
     exercises = data.get('exercises', [])
+
+    await persist_session_exercises_from_state(session_id, exercises)
     
     await db.execute(
         "UPDATE workout_sessions SET end_time = ? WHERE id = ?",
@@ -835,3 +887,113 @@ async def cancel_workout(callback: CallbackQuery, state: FSMContext):
 async def back_to_workout(callback: CallbackQuery, state: FSMContext):
     await show_workout_menu(callback.message, state)
     await callback.answer()
+
+
+@router.callback_query(F.data == "edit_workout_exercises")
+async def edit_workout_exercises(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    exercises = data.get("exercises", [])
+    if not exercises:
+        await callback.answer("❌ Нет упражнений для редактирования", show_alert=True)
+        return
+
+    builder = InlineKeyboardBuilder()
+    for idx, ex in enumerate(exercises):
+        builder.row(
+            InlineKeyboardButton(
+                text=f"✏️ {idx + 1}. {ex.get('name', 'Упражнение')}",
+                callback_data=f"edit_workout_ex:{idx}"
+            )
+        )
+    builder.row(InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_workout"))
+    await callback.message.edit_text("Выберите упражнение для редактирования:", reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit_workout_ex:"))
+async def edit_workout_exercise(callback: CallbackQuery, state: FSMContext):
+    ex_index = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    exercises = data.get("exercises", [])
+    if ex_index >= len(exercises):
+        await callback.answer("❌ Упражнение не найдено", show_alert=True)
+        return
+
+    ex = exercises[ex_index]
+    await state.update_data(edit_ex_index=ex_index)
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📊 Подходы", callback_data="edit_current_field:sets"),
+        InlineKeyboardButton(text="🔄 Повторы", callback_data="edit_current_field:reps"),
+    )
+    builder.row(
+        InlineKeyboardButton(text="⚖️ Вес", callback_data="edit_current_field:weight"),
+        InlineKeyboardButton(text="🗑 Удалить", callback_data="edit_current_field:delete"),
+    )
+    builder.row(InlineKeyboardButton(text="↩️ НАЗАД", callback_data="edit_workout_exercises"))
+    await callback.message.edit_text(
+        f"✏️ {ex.get('name')}\n"
+        f"Текущее: {ex.get('sets', '-') }x{ex.get('reps_display', ex.get('reps', '-'))}, "
+        f"{ex.get('weight_display', ex.get('weight', 'б/в'))}",
+        reply_markup=builder.as_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data.startswith("edit_current_field:"))
+async def edit_current_field(callback: CallbackQuery, state: FSMContext):
+    field = callback.data.split(":")[1]
+    data = await state.get_data()
+    ex_index = data.get("edit_ex_index")
+    exercises = data.get("exercises", [])
+    if ex_index is None or ex_index >= len(exercises):
+        await callback.answer("❌ Упражнение не найдено", show_alert=True)
+        return
+
+    if field == "delete":
+        exercises.pop(ex_index)
+        await state.update_data(exercises=exercises)
+        await callback.answer("✅ Удалено")
+        await show_workout_menu(callback.message, state)
+        return
+
+    field_text = {"sets": "подходов", "reps": "повторов", "weight": "вес (кг или '-')"}
+    await state.update_data(edit_field=field)
+    await callback.message.edit_text(f"Введите новое значение для {field_text[field]}:")
+    await state.set_state(WorkoutSessionStates.editing_exercise_value)
+    await callback.answer()
+
+
+@router.message(WorkoutSessionStates.editing_exercise_value)
+async def save_current_field(message: Message, state: FSMContext):
+    data = await state.get_data()
+    ex_index = data.get("edit_ex_index")
+    field = data.get("edit_field")
+    exercises = data.get("exercises", [])
+    if ex_index is None or ex_index >= len(exercises) or not field:
+        await message.answer("❌ Не удалось сохранить изменение")
+        return
+
+    ex = exercises[ex_index]
+    try:
+        if field == "sets":
+            ex["sets"] = int(message.text)
+        elif field == "reps":
+            reps = int(message.text)
+            ex["reps"] = reps
+            ex["reps_display"] = str(reps)
+        elif field == "weight":
+            if message.text.strip() == "-":
+                ex["weight"] = None
+                ex["weight_display"] = "б/в"
+            else:
+                weight = float(message.text.replace(",", "."))
+                ex["weight"] = weight
+                ex["weight_display"] = f"{weight} кг"
+    except ValueError:
+        await message.answer("❌ Неверный формат")
+        return
+
+    exercises[ex_index] = ex
+    await state.update_data(exercises=exercises)
+    await show_workout_menu(message, state)
