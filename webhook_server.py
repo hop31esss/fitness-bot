@@ -5,6 +5,10 @@ from datetime import datetime
 import requests
 import json
 import os
+from dotenv import load_dotenv
+
+# Загружаем переменные окружения
+load_dotenv()
 
 # Настройка логирования
 logging.basicConfig(
@@ -16,7 +20,10 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Токен бота (должен быть в переменных окружения)
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8391767389:AAFjf5bQDvi12-DbE3pbATzmYdjjki0Jq0A")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN не найден в переменных окружения!")
+    raise ValueError("BOT_TOKEN обязателен для работы webhook сервера")
 
 # ========== БАЗА ДАННЫХ ==========
 
@@ -67,10 +74,15 @@ def handle_webhook(webhook_key):
     URL: https://ваш-домен.com/webhook/уникальный_ключ
     """
     try:
+        # Ограничиваем размер тела запроса (например, до 100 КБ)
+        content_length = request.content_length or 0
+        if content_length > 100 * 1024:
+            logger.warning(f"❌ Слишком большой запрос: {content_length} байт, ключ {webhook_key}")
+            return jsonify({"error": "Payload too large"}), 413
+
         # Получаем данные из запроса
-        data = request.get_json()
-        logger.info(f"📡 Получен вебхук с ключом {webhook_key}")
-        logger.info(f"📦 Данные: {data}")
+        data = request.get_json(silent=True)
+        logger.info(f"📡 Получен вебхук с ключом {webhook_key}, размер={content_length} байт")
         
         if not data:
             return jsonify({"error": "No data provided"}), 400

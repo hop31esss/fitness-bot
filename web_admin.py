@@ -3,13 +3,75 @@ import sqlite3
 from datetime import datetime, timedelta
 import secrets
 import os
+import time
 
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
+app.permanent_session_lifetime = timedelta(hours=12)
 
 # Конфигурация
-ADMIN_PASSWORD = "Tima79022"  # Измените на свой пароль!
+# Пароль администратора берется из переменной окружения ADMIN_PASSWORD.
+# Если переменная не задана, используется небезопасный дефолт, который НУЖНО сменить.
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-now")
 DB_PATH = "fitness_bot.db"
+MAX_LOGIN_ATTEMPTS = int(os.getenv("ADMIN_MAX_LOGIN_ATTEMPTS", "5"))
+LOGIN_WINDOW_SECONDS = int(os.getenv("ADMIN_LOGIN_WINDOW_SECONDS", "900"))  # 15 минут
+LOCKOUT_SECONDS = int(os.getenv("ADMIN_LOCKOUT_SECONDS", "900"))  # 15 минут
+
+# Простая защита от брутфорса: счетчик неудачных попыток на IP
+_login_attempts = {}
+
+def _get_client_ip() -> str:
+    """Получение IP клиента с учетом прокси."""
+    forwarded_for = request.headers.get("X-Forwarded-For", "")
+    if forwarded_for:
+        return forwarded_for.split(",")[0].strip()
+    return request.remote_addr or "unknown"
+
+def _is_blocked(client_ip: str) -> int:
+    """
+    Проверка блокировки IP.
+    Возвращает оставшееся время блокировки в секундах (0 если не заблокирован).
+    """
+    record = _login_attempts.get(client_ip)
+    if not record:
+        return 0
+
+    blocked_until = record.get("blocked_until", 0)
+    now = time.time()
+    if blocked_until and blocked_until > now:
+        return int(blocked_until - now)
+
+    # Блокировка истекла - очищаем
+    if blocked_until and blocked_until <= now:
+        _login_attempts.pop(client_ip, None)
+    return 0
+
+def _register_failed_attempt(client_ip: str) -> None:
+    """Регистрация неудачной попытки входа и установка блокировки при превышении лимита."""
+    now = time.time()
+    record = _login_attempts.get(client_ip)
+    if not record:
+        _login_attempts[client_ip] = {
+            "count": 1,
+            "window_start": now,
+            "blocked_until": 0
+        }
+        return
+
+    # Если окно попыток истекло - начинаем заново
+    if now - record.get("window_start", now) > LOGIN_WINDOW_SECONDS:
+        record["count"] = 1
+        record["window_start"] = now
+        record["blocked_until"] = 0
+        return
+
+    record["count"] = record.get("count", 0) + 1
+    if record["count"] >= MAX_LOGIN_ATTEMPTS:
+        record["blocked_until"] = now + LOCKOUT_SECONDS
 
 def get_db():
     """Подключение к базе данных"""
@@ -20,11 +82,24 @@ def get_db():
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     """Страница входа"""
+    client_ip = _get_client_ip()
+    blocked_seconds = _is_blocked(client_ip)
+    if blocked_seconds > 0:
+        minutes = max(1, blocked_seconds // 60)
+        return render_template(
+            'login.html',
+            error=f"Слишком много попыток входа. Повторите через {minutes} мин."
+        )
+
     if request.method == 'POST':
         if request.form['password'] == ADMIN_PASSWORD:
+            _login_attempts.pop(client_ip, None)
+            session.clear()
+            session.permanent = True
             session['admin'] = True
             return redirect(url_for('dashboard'))
         else:
+            _register_failed_attempt(client_ip)
             return render_template('login.html', error="Неверный пароль")
     return render_template('login.html')
 
