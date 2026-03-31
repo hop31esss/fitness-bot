@@ -1,4 +1,5 @@
 import os
+import re
 from typing import List
 from dotenv import load_dotenv
 
@@ -6,9 +7,23 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Токен бота
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-if not BOT_TOKEN:
+BOT_TOKEN_RAW = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN_RAW:
     raise ValueError("BOT_TOKEN не найден в переменных окружения!")
+
+# Docker/Compose и .env иногда передают токен с пробелами/кавычками/CRLF.
+BOT_TOKEN = BOT_TOKEN_RAW.strip()
+if BOT_TOKEN and BOT_TOKEN[0] == BOT_TOKEN[-1] and BOT_TOKEN[0] in ("'", '"'):
+    BOT_TOKEN = BOT_TOKEN[1:-1].strip()
+
+_token_re = re.compile(r"^\d+:[A-Za-z0-9_-]{35}$")
+if not _token_re.match(BOT_TOKEN):
+    safe_prefix = BOT_TOKEN[:5] if BOT_TOKEN else ""
+    safe_len = len(BOT_TOKEN) if BOT_TOKEN else 0
+    raise ValueError(
+        f"BOT_TOKEN имеет неверный формат. len={safe_len}, prefix={safe_prefix!r}. "
+        "Проверьте переменную окружения/ .env (без кавычек и пробелов)."
+    )
 
 # ID администратора (ВАШ ID)
 ADMIN_ID = int(os.getenv("ADMIN_ID", "385450652"))
