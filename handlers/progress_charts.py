@@ -2,20 +2,45 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import io
-from datetime import datetime, timedelta
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, BufferedInputFile, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import logging
 
 from database.base import db
+from handlers.subscription import has_premium_access
+from services.premium_triggers import build_open_pro_markup
 
 router = Router()
 logger = logging.getLogger(__name__)
 
+
+async def _charts_premium_only(callback: CallbackQuery) -> bool:
+    """Графики — только PRO; иначе показываем paywall и возвращаем False."""
+    if await has_premium_access(callback.from_user.id):
+        return True
+    await callback.answer("Графики доступны в PRO", show_alert=True)
+    await callback.message.answer(
+        "👑 *Графики прогресса* — функция PRO.\n\n"
+        "В бесплатной версии доступна сводка в разделе «Прогресс».",
+        reply_markup=build_open_pro_markup("progress_stats"),
+    )
+    return False
+
+
 @router.callback_query(F.data == "progress_charts")
 async def show_charts_menu(callback: CallbackQuery):
     """Меню графиков прогресса"""
+    if not await has_premium_access(callback.from_user.id):
+        await callback.message.edit_text(
+            "👑 *Графики* доступны в подписке PRO.\n\n"
+            "Базовые метрики — в «Прогресс».",
+            reply_markup=build_open_pro_markup("progress_stats"),
+        )
+        await callback.answer()
+        return
+
     text = (
         "📊 *Графики прогресса*\n\n"
         "Выберите тип графика:"
@@ -37,8 +62,10 @@ async def show_charts_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "chart_total")
 async def chart_total(callback: CallbackQuery):
     """График общего прогресса"""
+    if not await _charts_premium_only(callback):
+        return
     user_id = callback.from_user.id
-    
+
     try:
         # Получаем данные из новой системы workout_sessions
         workouts = await db.fetch_all("""
@@ -115,14 +142,17 @@ async def chart_total(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка создания графика: {e}")
         await callback.answer("❌ Ошибка создания графика", show_alert=True)
-    
+        return
+
     await callback.answer()
 
 @router.callback_query(F.data == "chart_exercise")
 async def chart_exercise(callback: CallbackQuery):
     """Меню выбора упражнения для графика"""
+    if not await _charts_premium_only(callback):
+        return
     user_id = callback.from_user.id
-    
+
     try:
         # Получаем список упражнений пользователя
         exercises = await db.fetch_all("""
@@ -163,9 +193,11 @@ async def chart_exercise(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("chart_ex_detail:"))
 async def chart_exercise_detail(callback: CallbackQuery):
     """График прогресса по конкретному упражнению"""
+    if not await _charts_premium_only(callback):
+        return
     user_id = callback.from_user.id
     exercise_name = callback.data.split(":", 1)[1]
-    
+
     try:
         # Получаем прогресс по упражнению
         progress = await db.fetch_all("""
@@ -242,8 +274,10 @@ async def chart_exercise_detail(callback: CallbackQuery):
 @router.callback_query(F.data == "chart_weights")
 async def chart_weights(callback: CallbackQuery):
     """График максимальных весов"""
+    if not await _charts_premium_only(callback):
+        return
     user_id = callback.from_user.id
-    
+
     try:
         # Получаем максимальные веса по упражнениям
         max_weights = await db.fetch_all("""

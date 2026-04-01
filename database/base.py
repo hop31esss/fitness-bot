@@ -311,13 +311,20 @@ async def create_tables():
         "ALTER TABLE workout_exercises ADD COLUMN planned_sets INTEGER",
         "ALTER TABLE workout_exercises ADD COLUMN planned_reps INTEGER",
         "ALTER TABLE workout_exercises ADD COLUMN planned_weight REAL",
+        "ALTER TABLE users ADD COLUMN pro_banner_shown_after_progress INTEGER DEFAULT 0",
+        "ALTER TABLE users ADD COLUMN pro_workout_milestone_prompt_shown INTEGER DEFAULT 0",
+        "ALTER TABLE referrals ADD COLUMN reward_granted_at TIMESTAMP",
     ]
     for query in migration_queries:
         try:
             await db.execute(query)
         except Exception as exc:
             text = str(exc).lower()
-            if "duplicate column name" not in text and "already exists" not in text:
+            if (
+                "duplicate column name" not in text
+                and "already exists" not in text
+                and "no such table" not in text
+            ):
                 raise
 
 # Таблица приглашений
@@ -327,6 +334,7 @@ async def create_tables():
             referrer_id INTEGER NOT NULL,
             referred_id INTEGER UNIQUE NOT NULL,
             code TEXT NOT NULL,
+            reward_granted_at TIMESTAMP,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)

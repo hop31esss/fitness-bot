@@ -58,23 +58,38 @@ async def ai_advice_menu(callback: CallbackQuery):
         )
         return
     
+    today = datetime.now().date().isoformat()
+    today_workouts = await db.fetch_one(
+        """
+        SELECT COUNT(*) as cnt
+        FROM workout_sessions
+        WHERE user_id = ? AND date = ? AND end_time IS NOT NULL
+        """,
+        (user_id, today),
+    )
+    stats = await db.fetch_one(
+        "SELECT current_streak FROM user_stats WHERE user_id = ?",
+        (user_id,),
+    )
+    today_status = "тренировка выполнена ✅" if (today_workouts and today_workouts["cnt"] > 0) else "тренировки сегодня ещё не было ⏳"
+    streak = stats["current_streak"] if stats else 0
+
     text = (
-        "🤖 *AI-тренер*\n\n"
-        "Нейросеть поможет вам с тренировками:\n\n"
-        "1️⃣ **Совет на сегодня** - персональная рекомендация\n"
-        "2️⃣ **План тренировки** - сгенерирую программу\n"
-        "3️⃣ **Анализ прогресса** - разберу ваши результаты\n"
-        "4️⃣ **Задать вопрос** - спросите что угодно о фитнесе"
+        "🤖 *AI-ассистент*\n\n"
+        "*Сегодня:*\n"
+        f"• {today_status}\n"
+        f"• Стрик: {streak} дн.\n\n"
+        "Выберите действие:"
     )
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="1️⃣ Совет на сегодня", callback_data="ai_daily_tip"),
-        InlineKeyboardButton(text="2️⃣ План тренировки", callback_data="ai_workout_plan")
+        InlineKeyboardButton(text="💡 Совет на сегодня", callback_data="ai_daily_tip"),
+        InlineKeyboardButton(text="📋 План тренировки", callback_data="ai_workout_plan")
     )
     builder.row(
-        InlineKeyboardButton(text="3️⃣ Анализ прогресса", callback_data="ai_analyze"),
-        InlineKeyboardButton(text="4️⃣ Задать вопрос", callback_data="ai_ask")
+        InlineKeyboardButton(text="📈 Анализ прогресса", callback_data="ai_analyze"),
+        InlineKeyboardButton(text="❓ Задать вопрос", callback_data="ai_ask")
     )
     builder.row(
         InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")

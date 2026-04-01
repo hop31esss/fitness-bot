@@ -8,6 +8,8 @@ from datetime import datetime, date
 import logging
 
 from database.base import db
+from services.premium_triggers import maybe_send_workout_milestone_prompt
+from handlers.referral import maybe_grant_referrer_retention_bonus
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -876,6 +878,8 @@ async def finish_workout(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await state.clear()
     await callback.answer()
+    await maybe_send_workout_milestone_prompt(callback.message, user_id)
+    await maybe_grant_referrer_retention_bonus(user_id, callback.bot)
 
 @router.callback_query(F.data == "cancel_workout")
 async def cancel_workout(callback: CallbackQuery, state: FSMContext):

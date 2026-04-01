@@ -12,6 +12,7 @@ from config import ADMIN_ID
 
 router = Router()
 logger = logging.getLogger(__name__)
+RETENTION_WORKOUTS_REQUIRED = 3
 
 # ========== ГЕНЕРАЦИЯ РЕФЕРАЛЬНОГО КОДА ==========
 
@@ -90,7 +91,8 @@ async def show_referral_menu(message: Message):
     
     text = (
         "🤝 *Реферальная программа*\n\n"
-        "🎁 *За каждого приглашённого друга — 1 месяц премиума!*\n\n"
+        "🎁 *Другу — 7 дней PRO сразу*\n"
+        f"🏆 *Вам — 30 дней PRO после {RETENTION_WORKOUTS_REQUIRED} тренировок друга*\n\n"
         f"📊 *Ваша статистика:*\n"
         f"• Приглашено друзей: {count}\n"
         f"{sub_text}\n"
@@ -98,8 +100,8 @@ async def show_referral_menu(message: Message):
         f"`https://t.me/{(await message.bot.get_me()).username}?start={code}`\n\n"
         "📤 *Как это работает:*\n"
         "1. Отправьте эту ссылку другу\n"
-        "2. Друг переходит по ссылке и запускает бота\n"
-        "3. Вы сразу получаете +30 дней премиума\n"
+        "2. Друг получает 7 дней PRO после старта\n"
+        f"3. Когда друг завершит {RETENTION_WORKOUTS_REQUIRED} тренировки — вам +30 дней\n"
         "4. Чем больше друзей — тем больше премиума!"
     )
     
@@ -119,92 +121,126 @@ async def show_referral_menu(message: Message):
 
 # ========== ОБРАБОТКА РЕФЕРАЛЬНЫХ ПЕРЕХОДОВ ==========
 
-@router.message(Command("start"))
-async def referral_start(message: Message):
-    """Обработка команды /start с реферальным кодом"""
-    user_id = message.from_user.id
-    args = message.text.split()
-    
-    # Регистрируем пользователя
-    await db.execute(
-        """INSERT OR IGNORE INTO users (user_id, username, first_name, last_name) 
-        VALUES (?, ?, ?, ?)""",
-        (user_id, message.from_user.username, message.from_user.first_name, message.from_user.last_name)
-    )
-    
-    # Проверяем, есть ли реферальный код
-    if len(args) > 1:
-        code = args[1]
-        
-        # Находим, кто пригласил
-        referrer = await db.fetch_one(
-            "SELECT user_id FROM referral_codes WHERE code = ?",
-            (code,)
-        )
-        
-        if referrer and referrer['user_id'] != user_id:
-            # Проверяем, не был ли этот пользователь уже приглашён
-            existing = await db.fetch_one(
-                "SELECT id FROM referrals WHERE referred_id = ?",
-                (user_id,)
-            )
-            
-            if not existing:
-                # Сохраняем приглашение
-                await db.execute("""
-                    INSERT INTO referrals (referrer_id, referred_id, code) 
-                    VALUES (?, ?, ?)
-                """, (referrer['user_id'], user_id, code))
-                
-                # ДАЁМ МЕСЯЦ ПРЕМИУМА ПРИГЛАСИВШЕМУ
-                await add_premium_month(referrer['user_id'])
-                
-                # Отправляем уведомление пригласившему
-                try:
-                    await message.bot.send_message(
-                        referrer['user_id'],
-                        f"🎉 *Поздравляем!*\n\n"
-                        f"Пользователь {message.from_user.first_name} присоединился по вашей ссылке!\n"
-                        f"✅ Вы получили +30 дней премиума!"
-                    )
-                except:
-                    pass
-                
-                # Отправляем приветствие новому пользователю
-                await message.answer(
-                    "👋 *Добро пожаловать!*\n\n"
-                    "Вы перешли по реферальной ссылке.\n"
-                    "Приглашайте друзей и получайте премиум! 🎁"
-                )
-    
-    # Показываем обычное приветствие
-    await show_referral_menu(message)
+async def apply_premium_days(user_id: int, days: int):
+    """Добавляет N дней премиума пользователю."""
+    if days <= 0:
+        return
 
-async def add_premium_month(user_id: int):
-    """Добавляет 30 дней премиума пользователю"""
     user = await db.fetch_one(
         "SELECT subscription_until FROM users WHERE user_id = ?",
         (user_id,)
     )
-    
     now = datetime.now()
-    
+
     if user and user['subscription_until']:
         try:
             current_until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-            if current_until > now:
-                new_until = current_until + timedelta(days=30)
-            else:
-                new_until = now + timedelta(days=30)
-        except:
-            new_until = now + timedelta(days=30)
+            base_until = current_until if current_until > now else now
+        except Exception:
+            base_until = now
     else:
-        new_until = now + timedelta(days=30)
-    
+        base_until = now
+
+    new_until = base_until + timedelta(days=days)
     await db.execute(
         "UPDATE users SET is_subscribed = TRUE, subscription_until = ? WHERE user_id = ?",
         (new_until.isoformat(), user_id)
     )
+
+async def add_premium_month(user_id: int):
+    """Добавляет 30 дней премиума пользователю."""
+    await apply_premium_days(user_id, 30)
+
+async def handle_referral_join(message: Message):
+    """Обрабатывает вход по реферальному коду и выдает 7 дней другу."""
+    user_id = message.from_user.id
+    args = message.text.split()
+
+    if len(args) > 1:
+        code = args[1]
+
+        referrer = await db.fetch_one(
+            "SELECT user_id FROM referral_codes WHERE code = ?",
+            (code,)
+        )
+
+        if referrer and referrer['user_id'] != user_id:
+            existing = await db.fetch_one(
+                "SELECT id FROM referrals WHERE referred_id = ?",
+                (user_id,)
+            )
+
+            if not existing:
+                await db.execute("""
+                    INSERT INTO referrals (referrer_id, referred_id, code) 
+                    VALUES (?, ?, ?)
+                """, (referrer['user_id'], user_id, code))
+
+                # Друг получает 7 дней PRO сразу.
+                await apply_premium_days(user_id, 7)
+
+                # Уведомляем пригласившего о статусе награды.
+                try:
+                    await message.bot.send_message(
+                        referrer['user_id'],
+                        f"🎉 *Новый друг присоединился!*\n\n"
+                        f"{message.from_user.first_name} активировал вашу ссылку.\n"
+                        f"⏳ Ваш бонус +30 дней будет начислен после {RETENTION_WORKOUTS_REQUIRED} завершённых тренировок друга."
+                    )
+                except Exception:
+                    pass
+
+                await message.answer(
+                    "👋 *Добро пожаловать!*\n\n"
+                    "Вы перешли по реферальной ссылке.\n"
+                    "🎁 Вам начислено **7 дней PRO**.\n\n"
+                    "Завершите 3 тренировки, чтобы ваш друг получил +30 дней."
+                )
+
+async def maybe_grant_referrer_retention_bonus(referred_user_id: int, bot=None):
+    """
+    Если приглашенный пользователь завершил нужное число тренировок,
+    начисляет рефереру +30 дней один раз.
+    """
+    referral = await db.fetch_one(
+        """
+        SELECT id, referrer_id, reward_granted_at
+        FROM referrals
+        WHERE referred_id = ?
+        """,
+        (referred_user_id,)
+    )
+    if not referral or referral.get("reward_granted_at"):
+        return
+
+    completed = await db.fetch_one(
+        """
+        SELECT COUNT(*) as cnt
+        FROM workout_sessions
+        WHERE user_id = ? AND end_time IS NOT NULL
+        """,
+        (referred_user_id,)
+    )
+    completed_count = completed["cnt"] if completed else 0
+    if completed_count < RETENTION_WORKOUTS_REQUIRED:
+        return
+
+    await add_premium_month(referral["referrer_id"])
+    await db.execute(
+        "UPDATE referrals SET reward_granted_at = CURRENT_TIMESTAMP WHERE id = ?",
+        (referral["id"],)
+    )
+
+    if bot:
+        try:
+            await bot.send_message(
+                referral["referrer_id"],
+                "🎉 *Бонус подтверждён!*\n\n"
+                f"Ваш друг завершил {RETENTION_WORKOUTS_REQUIRED} тренировки.\n"
+                "✅ Начислено +30 дней PRO."
+            )
+        except Exception:
+            pass
 
 # ========== ДОПОЛНИТЕЛЬНЫЕ ФУНКЦИИ ==========
 
@@ -219,7 +255,7 @@ async def share_referral(callback: CallbackQuery):
         "📤 *Поделиться ссылкой*\n\n"
         "Отправьте эту ссылку друзьям:\n\n"
         f"`https://t.me/{bot_username}?start={code}`\n\n"
-        "За каждого друга вы получите **+30 дней премиума**!"
+        f"Друг получит **7 дней PRO**, а вы — **+30 дней**, когда он завершит {RETENTION_WORKOUTS_REQUIRED} тренировки."
     )
     
     builder = InlineKeyboardBuilder()
