@@ -101,7 +101,6 @@ async def show_calendar(callback: CallbackQuery):
                     # День с тренировкой
                     info = workout_dict[current_date]
                     count = info['count']
-                    volume = int(info['volume'] or 0)
                     
                     # Определяем цвет/эмодзи
                     if count >= 3:

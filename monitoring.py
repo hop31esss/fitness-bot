@@ -41,7 +41,7 @@ class ErrorMonitor:
                 f"Подробности в errors.log"
             )
             await self.bot.send_message(self.admin_id, error_text)
-        except:
+        except Exception:
             pass
         
         # Логируем в консоль

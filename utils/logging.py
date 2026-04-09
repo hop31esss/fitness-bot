@@ -3,12 +3,19 @@ from typing import Any, Mapping
 
 
 logger = logging.getLogger("fitness_bot")
-if not logger.handlers:
+
+
+def _configure_logger(target_logger: logging.Logger) -> None:
+    if target_logger.handlers:
+        return
     handler = logging.FileHandler("bot.log", encoding="utf-8", mode="a")
     formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
     handler.setFormatter(formatter)
-    logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+    target_logger.addHandler(handler)
+    target_logger.setLevel(logging.INFO)
+
+
+_configure_logger(logger)
 
 
 def log_action(user_id: int, action: str, extra: Mapping[str, Any] | None = None) -> None:

@@ -291,7 +291,7 @@ async def accept_friend(callback: CallbackQuery):
                 f"✅ @{callback.from_user.username or callback.from_user.first_name} принял вашу заявку в друзья!\n\n"
                 f"Теперь вы можете соревноваться и участвовать в челленджах! 🏆"
             )
-        except:
+        except Exception:
             pass
         
         await callback.answer("✅ Заявка принята!")
@@ -327,7 +327,7 @@ async def accept_friend_request(callback: CallbackQuery):
                 f"✅ @{callback.from_user.username or callback.from_user.first_name} принял вашу заявку в друзья!\n\n"
                 f"Теперь вы можете соревноваться и участвовать в челленджах! 🏆"
             )
-        except:
+        except Exception:
             pass
         
         await callback.message.edit_text(

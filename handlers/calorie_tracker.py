@@ -468,7 +468,7 @@ async def show_category(callback: CallbackQuery):
     await callback.answer()
 
 @router.callback_query(F.data.startswith("select_food:"))
-async def select_food(callback: CallbackQuery, state: FSMContext):
+async def select_food_from_fatsecret(callback: CallbackQuery, state: FSMContext):
     """Выбор продукта из базы"""
     food = callback.data.split(":")[1]
     

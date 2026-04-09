@@ -22,28 +22,10 @@ async def unknown_message(message: Message):
 @router.callback_query()
 async def handle_all_callbacks(callback: CallbackQuery):
     """Обработчик всех callback-ов которые не нашли другие обработчики"""
-    unknown_callbacks = {
-        "suggest_idea": "💡 Предложить идею",
-        "suggest_feature": "💡 Предложить функцию",
-        "other_projects": "🚀 Другие проекты",
-        "settings_profile": "👤 Профиль",
-        "settings_theme": "📱 Оформление",
-        "settings_language": "🌍 Язык",
-        "edit_profile_name": "✏️ Изменить имя",
-        "edit_profile_contacts": "📧 Изменить контакты",
-        "set_language_ru": "🇷🇺 Русский",
-        "set_language_en": "🇬🇧 English",
-        "set_units_kg": "📏 Килограммы",
-        "set_units_lbs": "⚖️ Фунты",
-        "edit_aliases": "🔤 Редактировать алиасы"
-    }
-    
-  # Только для действительно нереализованных функций
-@router.callback_query(F.data.in_([
-    "exercise_aliases",  # если эти функции еще не готовы
-]))
-async def under_development(callback: CallbackQuery):
-    await callback.answer("Функция в разработке 🚀")# Только для действительно нереализованных функций
+    await callback.answer()
+
+
+# Только для действительно нереализованных функций
 @router.callback_query(F.data.in_([
     "exercise_aliases",  # если эти функции еще не готовы
 ]))

@@ -19,23 +19,6 @@ def get_training_menu_keyboard() -> InlineKeyboardMarkup:
     
     return builder.as_markup()
 
-def get_exercises_keyboard(exercises: list) -> InlineKeyboardMarkup:
-    """Клавиатура со списком упражнений"""
-    builder = InlineKeyboardBuilder()
-    
-    for ex in exercises:
-        name = ex.get('alias') or ex.get('name')
-        builder.row(
-            InlineKeyboardButton(text=f"💪 {name}", callback_data=f"select_ex:{ex['name']}")
-        )
-    
-    builder.row(
-        InlineKeyboardButton(text="➕ НОВОЕ", callback_data="new_exercise"),
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="training_journal")
-    )
-    
-    return builder.as_markup()
-
 def get_timer_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для таймера"""
     builder = InlineKeyboardBuilder()

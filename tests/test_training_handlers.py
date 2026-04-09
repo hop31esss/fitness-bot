@@ -88,3 +88,68 @@ async def test_process_sets_invalid_then_valid():
     await training_handlers.process_sets(good, state)
     assert state.data["sets"] == 3
 
+
+@pytest.mark.asyncio
+async def test_process_exercise_alias_skip_and_save(monkeypatch):
+    calls = []
+
+    async def fake_execute(query, params):
+        calls.append((query, params))
+
+    monkeypatch.setattr(training_handlers.db, "execute", fake_execute)
+
+    state = FakeState()
+    await state.update_data(exercise_name="Присед")
+    message = _message("-")
+
+    await training_handlers.process_exercise_alias(message, state)
+
+    assert calls
+    assert state.state is None
+    message.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_process_reps_invalid_then_valid():
+    state = FakeState()
+    bad = _message("NaN")
+    await training_handlers.process_reps(bad, state)
+    bad.answer.assert_awaited_once()
+
+    good = _message("12")
+    await training_handlers.process_reps(good, state)
+    assert state.data["reps"] == 12
+
+
+@pytest.mark.asyncio
+async def test_process_weight_saves_workout(monkeypatch):
+    calls = []
+
+    async def fake_execute(query, params):
+        calls.append((query, params))
+
+    monkeypatch.setattr(training_handlers.db, "execute", fake_execute)
+
+    state = FakeState()
+    await state.update_data(exercise="Жим", sets=3, reps=10)
+    message = _message("-", user_id=77)
+
+    await training_handlers.process_weight(message, state)
+
+    assert calls
+    assert calls[0][1][0] == 77
+    assert state.state is None
+    message.answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_workout_history_empty(monkeypatch):
+    async def fake_fetch_all(query, params):
+        return []
+
+    monkeypatch.setattr(training_handlers.db, "fetch_all", fake_fetch_all)
+    callback = _callback("workout_history")
+
+    await training_handlers.workout_history(callback)
+    callback.message.edit_text.assert_awaited_once()
+

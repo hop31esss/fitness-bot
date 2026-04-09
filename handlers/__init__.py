@@ -21,17 +21,27 @@ from .premium import router as premium_router
 from .admin_panel import router as admin_panel_router
 from .common import router as common_router        # common должен быть ПОСЛЕДНИМ!
 
-all = [
+__all__ = [
     "start_router",
-    "training_router", 
+    "training_router",
     "profile_router",
     "leaderboard_router",
     "achievements_router",
-    "timer_router",
-    "stats_router",          
-    "calendar_router",       
-    "exercises_router",      
-    "settings_router",       
-    "admin_router",
-    "common_router"          # common должен быть последним!
+    "timer_router", 
+    "stats_router",
+    "calendar_router",
+    "exercises_router",
+    "settings_router",
+    "recommendations_router",
+    "challenges_router",
+    "features_router",
+    "feed_router",
+    "daily_routine_router",
+    "music_router",
+    "friends_router",
+    "one_rep_max_router",
+    "calorie_tracker_router",
+    "premium_router",
+    "admin_panel_router",
+    "common_router",  # common должен быть последним!
 ]

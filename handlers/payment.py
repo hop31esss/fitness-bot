@@ -38,7 +38,7 @@ async def activate_premium(user_id: int, bot):
                 current_until = datetime.fromisoformat(current['subscription_until'].replace('Z', '+00:00'))
                 if current_until > now:
                     until = current_until + timedelta(days=30)
-            except:
+            except Exception:
                 pass
         
         # Сохраняем в БД
@@ -140,13 +140,6 @@ async def pay_yookassa(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     await callback.message.edit_text("⏳ *Создаю платеж...*")
-    
-    # Получаем информацию о пользователе
-    user = await db.fetch_one(
-        "SELECT first_name, username FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    name = user['first_name'] or user['username'] or f"User{user_id}"
     
     # Создаем счет через ЮKassa
     payment_data = await YooKassaService.create_payment(

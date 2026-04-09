@@ -30,9 +30,9 @@ def ensure_templates_table():
         
         conn.commit()
         conn.close()
-        print("✅ Таблица workout_templates создана/проверена")
+        print("Table workout_templates created/checked")
     except Exception as e:
-        print(f"❌ Ошибка создания таблицы: {e}")
+        print(f"Error creating table: {e}")
 
 # Вызываем сразу
 ensure_templates_table()
@@ -811,7 +811,6 @@ async def template_share_send(message: Message, state: FSMContext):
 @router.callback_query(F.data.startswith("template_accept:"))
 async def template_accept(callback: CallbackQuery):
     parts = callback.data.split(":")
-    sender_id = int(parts[1])
     template_id = int(parts[2])
     receiver_id = callback.from_user.id
     

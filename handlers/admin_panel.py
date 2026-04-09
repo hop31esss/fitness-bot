@@ -143,8 +143,6 @@ async def admin_users_handler(callback: CallbackQuery):
     
     for i, user in enumerate(users, 1):
         name = user['username'] or user['first_name'] or f"ID{user['user_id']}"
-        date = user['created_at'][:10] if user['created_at'] else "?"
-        
         if user['is_subscribed'] and user['subscription_until']:
             until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
             if datetime.now() <= until:
@@ -598,7 +596,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
             await callback.bot.send_message(target_id, broadcast_text)
             success += 1
             await asyncio.sleep(0.03)
-        except:
+        except Exception:
             failed += 1
     
     result_text = (

@@ -162,7 +162,7 @@ async def challenge_enter_days(message: Message, state: FSMContext):
                 f"⏳ {days} дней\n\n"
                 f"Примите вызов в разделе 'Челленджи'!"
             )
-        except:
+        except Exception:
             pass
         
         await message.answer(

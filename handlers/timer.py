@@ -108,7 +108,7 @@ async def run_timer(user_id: int, chat_id: int, message_id: int, seconds: int, t
                      f"Что дальше?",
                 reply_markup=get_completed_timer_keyboard()
             )
-        except:
+        except Exception:
             pass
         
         # Удаляем таймер из активных
