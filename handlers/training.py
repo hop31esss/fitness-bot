@@ -1,11 +1,11 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime
 
 from database.base import db
+from utils.logging import log_action
 
 router = Router()
 
@@ -22,6 +22,7 @@ class AddExerciseStates(StatesGroup):
 @router.callback_query(F.data == "training_journal")
 async def training_journal(callback: CallbackQuery):
     """Журнал тренировок - главное меню"""
+    log_action(callback.from_user.id, "training_journal_open")
     text = "📒 *Журнал тренировок*\n\nВыберите действие:"
     
     builder = InlineKeyboardBuilder()
@@ -43,6 +44,7 @@ async def training_journal(callback: CallbackQuery):
 @router.callback_query(F.data == "add_exercise")
 async def add_exercise_start(callback: CallbackQuery, state: FSMContext):
     """Начало добавления упражнения"""
+    log_action(callback.from_user.id, "add_exercise_start")
     await callback.message.edit_text(
         "📝 *Добавление упражнения*\n\n"
         "Введите название упражнения (например: Жим лежа):\n\n"
@@ -54,6 +56,7 @@ async def add_exercise_start(callback: CallbackQuery, state: FSMContext):
 @router.message(AddExerciseStates.waiting_exercise_name)
 async def process_exercise_name(message: Message, state: FSMContext):
     """Обработка названия упражнения"""
+    log_action(message.from_user.id, "process_exercise_name")
     if message.text == "/cancel":
         await message.answer("❌ Добавление отменено.")
         await state.clear()
@@ -73,6 +76,7 @@ async def process_exercise_name(message: Message, state: FSMContext):
 @router.callback_query(F.data == "my_exercises")
 async def my_exercises(callback: CallbackQuery):
     """Мои упражнения - список упражнений пользователя"""
+    log_action(callback.from_user.id, "my_exercises_open")
     user_id = callback.from_user.id
     
     # Получаем список упражнений пользователя
@@ -106,6 +110,7 @@ async def my_exercises(callback: CallbackQuery):
 @router.message(AddExerciseStates.waiting_exercise_alias)
 async def process_exercise_alias(message: Message, state: FSMContext):
     """Обработка алиаса упражнения"""
+    log_action(message.from_user.id, "process_exercise_alias")
     if message.text == "/cancel":
         await message.answer("❌ Добавление отменено.")
         await state.clear()
@@ -143,6 +148,7 @@ async def process_exercise_alias(message: Message, state: FSMContext):
 @router.callback_query(F.data == "add_workout")
 async def add_workout_start(callback: CallbackQuery, state: FSMContext):
     """Начало добавления тренировки"""
+    log_action(callback.from_user.id, "add_workout_start")
     await callback.message.edit_text(
         "🏋️ *Добавление тренировки*\n\n"
         "Введите название упражнения:"
@@ -153,6 +159,7 @@ async def add_workout_start(callback: CallbackQuery, state: FSMContext):
 @router.message(WorkoutStates.waiting_exercise)
 async def process_exercise(message: Message, state: FSMContext):
     """Обработка упражнения"""
+    log_action(message.from_user.id, "process_exercise")
     exercise = message.text.strip()
     await state.update_data(exercise=exercise)
     
@@ -162,6 +169,7 @@ async def process_exercise(message: Message, state: FSMContext):
 @router.message(WorkoutStates.waiting_sets)
 async def process_sets(message: Message, state: FSMContext):
     """Обработка подходов"""
+    log_action(message.from_user.id, "process_sets")
     try:
         sets = int(message.text)
         await state.update_data(sets=sets)
@@ -173,6 +181,7 @@ async def process_sets(message: Message, state: FSMContext):
 @router.message(WorkoutStates.waiting_reps)
 async def process_reps(message: Message, state: FSMContext):
     """Обработка повторений"""
+    log_action(message.from_user.id, "process_reps")
     try:
         reps = int(message.text)
         await state.update_data(reps=reps)
@@ -184,6 +193,7 @@ async def process_reps(message: Message, state: FSMContext):
 @router.message(WorkoutStates.waiting_weight)
 async def process_weight(message: Message, state: FSMContext):
     """Обработка веса"""
+    log_action(message.from_user.id, "process_weight")
     weight = None if message.text == '-' else float(message.text)
     
     data = await state.get_data()
@@ -210,6 +220,7 @@ async def process_weight(message: Message, state: FSMContext):
 @router.callback_query(F.data == "workout_history")
 async def workout_history(callback: CallbackQuery):
     """История тренировок"""
+    log_action(callback.from_user.id, "workout_history_open")
     user_id = callback.from_user.id
     
     # Показываем сессии с упражнениями

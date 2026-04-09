@@ -1,6 +1,6 @@
 from aiogram import Router, F
 import json
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -228,7 +228,7 @@ async def save_workout(callback: CallbackQuery, state: FSMContext):
         logger.info(f"📦 Данные тренировки: {data.get('exercises', [])}")
         
         await save_workout_session(user_id, state)
-        logger.info(f"✅ Тренировка сохранена в БД")
+        logger.info("✅ Тренировка сохранена в БД")
         
         await callback.message.edit_text(
             "💾 *Тренировка сохранена!*\n\n"
@@ -237,7 +237,7 @@ async def save_workout(callback: CallbackQuery, state: FSMContext):
                 InlineKeyboardButton(text="🏠 В ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
             ).as_markup()
         )
-        logger.info(f"✅ Сообщение отправлено пользователю")
+        logger.info("✅ Сообщение отправлено пользователю")
         
     except Exception as e:
         logger.error(f"❌ Ошибка сохранения: {e}")
@@ -655,8 +655,8 @@ async def process_set_weight(message: Message, state: FSMContext):
         # Все веса введены, теперь повторения
         await state.update_data(weight_method='each')
         await message.answer(
-            f"🔄 *Повторения*\n\n"
-            f"Введите количество повторений для всех подходов (одинаково):"
+            "🔄 *Повторения*\n\n"
+            "Введите количество повторений для всех подходов (одинаково):"
         )
         await state.set_state(WorkoutSessionStates.entering_reps)
 
@@ -844,7 +844,6 @@ async def save_exercise(state: FSMContext, message: Message):
     except Exception as e:
         logger.error(f"❌ Ошибка сохранения упражнения: {e}")
         
-from services.stats_updater import update_user_stats
 
 @router.callback_query(F.data == "finish_workout")
 async def finish_workout(callback: CallbackQuery, state: FSMContext):

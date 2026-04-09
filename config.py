@@ -1,6 +1,5 @@
 import os
 import re
-from typing import List
 from dotenv import load_dotenv
 
 # Загружаем переменные окружения

@@ -1,6 +1,6 @@
 import aiosqlite
 import logging
-from typing import List, Tuple, Any, Optional
+from typing import List, Tuple, Optional
 from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)

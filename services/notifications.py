@@ -1,7 +1,6 @@
 import logging
 import asyncio
 from datetime import datetime, timedelta
-from typing import List
 from aiogram import Bot
 
 from database.base import db

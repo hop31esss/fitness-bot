@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -138,7 +138,7 @@ async def edit_exercise(callback: CallbackQuery, state: FSMContext):
     
     await state.update_data(editing_exercise_id=exercise_id)
     
-    text = f"✏️ *Редактирование упражнения*\n\n"
+    text = "✏️ *Редактирование упражнения*\n\n"
     text += f"Текущее название: {exercise['name']}\n"
     text += f"Текущий алиас: {exercise['alias'] or 'нет'}\n\n"
     text += "Что вы хотите изменить?"

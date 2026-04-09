@@ -7,7 +7,7 @@ import uuid
 import logging
 
 from database.base import db
-from config import ADMIN_ID, YOOKASSA_PROVIDER_TOKEN
+from config import ADMIN_ID
 from services.yookassa_service import YooKassaService
 
 router = Router()
@@ -151,7 +151,7 @@ async def pay_yookassa(callback: CallbackQuery):
     # Создаем счет через ЮKassa
     payment_data = await YooKassaService.create_payment(
         amount=PREMIUM_PRICE,
-        description=f"Премиум подписка FitnessBot на 1 месяц",
+        description="Премиум подписка FitnessBot на 1 месяц",
         user_id=user_id,
         return_url="https://t.me/StrengthAIBot"
     )
@@ -266,7 +266,7 @@ async def pay_stars(callback: CallbackQuery):
         await callback.bot.send_invoice(
             chat_id=user_id,
             title="Премиум подписка FitnessBot",
-            description=f"Доступ ко всем премиум-функциям на 1 месяц",
+            description="Доступ ко всем премиум-функциям на 1 месяц",
             payload=payload,
             provider_token="",  # Для Stars оставляем пустым
             currency="XTR",  # XTR = Telegram Stars

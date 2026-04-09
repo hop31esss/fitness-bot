@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -394,9 +394,9 @@ async def process_revoke_user_id(message: Message, state: FSMContext):
         try:
             await message.bot.send_message(
                 target_user_id,
-                f"⚠️ *Премиум-доступ отозван*\n\n"
-                f"Администратор отозвал ваш премиум-доступ.\n"
-                f"Спасибо за использование бота! 🙏"
+                "⚠️ *Премиум-доступ отозван*\n\n"
+                "Администратор отозвал ваш премиум-доступ.\n"
+                "Спасибо за использование бота! 🙏"
             )
             notify_status = "✅ Уведомление отправлено"
         except:

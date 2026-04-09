@@ -1,12 +1,10 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime
 
 from database.base import db
-from config import ADMIN_ID
 
 router = Router()
 
@@ -206,7 +204,7 @@ async def process_friend_username(message: Message, state: FSMContext):
             ).as_markup()
         )
         
-    except Exception as e:
+    except Exception:
         # Если не удалось отправить уведомление (пользователь не запускал бота)
         await message.answer(
             f"✅ Заявка в друзья отправлена, но пользователь @{clean_username} ещё не запускал бота.\n"
@@ -255,7 +253,7 @@ async def friend_requests(callback: CallbackQuery):
                     callback_data=f"accept_friend:{req['id']}"
                 ),
                 InlineKeyboardButton(
-                    text=f"❌ Отклонить",
+                    text="❌ Отклонить",
                     callback_data=f"reject_friend:{req['id']}"
                 )
             )

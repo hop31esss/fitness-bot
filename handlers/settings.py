@@ -1,16 +1,12 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
-from aiogram.filters import Command
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, FSInputFile
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, timedelta
-import asyncio
 import logging
-import os
 
 from database.base import db
-from config import ADMIN_ID
+from utils.logging import log_action
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -21,6 +17,7 @@ class NotificationStates(StatesGroup):
 @router.callback_query(F.data == "settings")
 async def settings_menu(callback: CallbackQuery):
     """Меню настроек"""
+    log_action(callback.from_user.id, "settings_menu_open")
     user_id = callback.from_user.id
     
     # Получаем текущие настройки пользователя
@@ -70,6 +67,7 @@ async def settings_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "settings_units")
 async def settings_units(callback: CallbackQuery):
     """Настройка единиц измерения"""
+    log_action(callback.from_user.id, "settings_units_open")
     user_id = callback.from_user.id
     
     current_units = await db.fetch_one(
@@ -79,7 +77,7 @@ async def settings_units(callback: CallbackQuery):
     
     current = current_units['units'] if current_units else 'kg'
     
-    text = f"📏 *Единицы измерения*\n\n"
+    text = "📏 *Единицы измерения*\n\n"
     text += f"Текущие: {'Килограммы (кг)' if current == 'kg' else 'Фунты (lbs)'}\n\n"
     text += "Выберите систему измерений:"
     
@@ -104,6 +102,7 @@ async def settings_units(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("set_units:"))
 async def set_units(callback: CallbackQuery):
     """Установка единиц измерения"""
+    log_action(callback.from_user.id, "settings_set_units", {"data": callback.data})
     user_id = callback.from_user.id
     units = callback.data.split(":")[1]
     
@@ -121,6 +120,7 @@ async def set_units(callback: CallbackQuery):
 @router.callback_query(F.data == "settings_notifications")
 async def settings_notifications(callback: CallbackQuery):
     """Настройка уведомлений"""
+    log_action(callback.from_user.id, "settings_notifications_open")
     user_id = callback.from_user.id
     
     settings = await db.fetch_one(
@@ -165,6 +165,7 @@ async def settings_notifications(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("toggle_notifications:"))
 async def toggle_notifications(callback: CallbackQuery):
     """Включение/выключение уведомлений"""
+    log_action(callback.from_user.id, "settings_toggle_notifications", {"data": callback.data})
     user_id = callback.from_user.id
     action = callback.data.split(":")[1]
     
@@ -183,6 +184,7 @@ async def toggle_notifications(callback: CallbackQuery):
 @router.callback_query(F.data == "change_notification_time")
 async def change_notification_time(callback: CallbackQuery, state: FSMContext):
     """Изменение времени уведомлений"""
+    log_action(callback.from_user.id, "settings_change_notification_time")
     await callback.message.answer(
         "⏰ *Установите время для уведомлений*\n\n"
         "Введите время в формате ЧЧ:ММ (например, 18:00 или 09:30):"
@@ -194,6 +196,7 @@ async def change_notification_time(callback: CallbackQuery, state: FSMContext):
 @router.message(NotificationStates.waiting_notification_time)
 async def process_notification_time(message: Message, state: FSMContext):
     """Обработка времени уведомлений"""
+    log_action(message.from_user.id, "settings_process_notification_time")
     time_text = message.text.strip()
     
     # Простая валидация времени
@@ -235,6 +238,7 @@ async def process_notification_time(message: Message, state: FSMContext):
 @router.callback_query(F.data == "settings_export")
 async def settings_export(callback: CallbackQuery):
     """Экспорт данных"""
+    log_action(callback.from_user.id, "settings_export")
     from services.export import export_user_data
     import os
     
@@ -370,7 +374,6 @@ async def confirm_reset_workouts(callback: CallbackQuery):
     )
     await callback.answer("Тренировки сброшены")
 
-    from aiogram.filters import Command
 
 @router.callback_query(F.data == "suggest_feature")
 async def suggest_feature(callback: CallbackQuery):

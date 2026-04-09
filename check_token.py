@@ -20,7 +20,7 @@ async def check():
     try:
         bot = Bot(token=TOKEN)
         me = await bot.get_me()
-        print(f"✅ УСПЕХ!")
+        print("✅ УСПЕХ!")
         print(f"   Бот: @{me.username}")
         print(f"   ID: {me.id}")
         print(f"   Имя: {me.full_name}")

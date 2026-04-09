@@ -2,7 +2,6 @@ import logging
 import traceback
 from datetime import datetime, timedelta
 from aiogram.types import Update
-import sys
 
 class ErrorMonitor:
     def __init__(self, bot, admin_id):

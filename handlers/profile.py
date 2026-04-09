@@ -1,15 +1,13 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
 from database.base import db
-from services.analytics import get_user_stats, get_workout_history
-from services.export import export_user_data
+from services.analytics import get_user_stats
 from utils.formatters import format_stats
 import matplotlib.pyplot as plt
 import io
 from aiogram.types import BufferedInputFile
-import os
 import logging
 logger = logging.getLogger(__name__)
 

@@ -1,15 +1,16 @@
 from aiogram import BaseMiddleware
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram.types import TelegramObject, CallbackQuery, InlineKeyboardButton
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from typing import Any, Awaitable, Callable, Dict
 from database.base import db
 from datetime import datetime
+from utils.logging import log_action
 
 class SubscriptionMiddleware(BaseMiddleware):
     async def __call__(
         self,
-        handler: Callable[[Message, Dict[str, Any]], Awaitable[Any]],
-        event: Message | CallbackQuery,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        event: TelegramObject,
         data: Dict[str, Any]
     ) -> Any:
         
@@ -27,6 +28,8 @@ class SubscriptionMiddleware(BaseMiddleware):
         # Проверяем, является ли событие callback_query
         if isinstance(event, CallbackQuery):
             callback_data = event.data
+            if event.from_user:
+                log_action(event.from_user.id, "middleware_subscription_check", {"data": callback_data})
             
             # Проверяем, содержит ли callback_data премиум-функцию
             if any(feature in callback_data for feature in premium_features):

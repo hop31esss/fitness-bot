@@ -1,6 +1,5 @@
 import logging
 from yookassa import Configuration, Payment
-from yookassa.domain.notification import WebhookNotification
 import uuid
 from typing import Optional, Dict
 
@@ -16,7 +15,12 @@ class YooKassaService:
     """Сервис для работы с ЮKassa API"""
     
     @staticmethod
-    async def create_payment(amount: float, description: str, user_id: int, return_url: str = None) -> Optional[Dict]:
+    async def create_payment(
+        amount: float,
+        description: str,
+        user_id: int,
+        return_url: str | None = None,
+    ) -> Optional[Dict]:
         """
         Создание платежа в ЮKassa
         

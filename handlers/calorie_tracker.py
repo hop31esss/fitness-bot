@@ -1,5 +1,5 @@
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -707,7 +707,7 @@ async def process_food_search(message: Message, state: FSMContext):
     await message.answer("🔍 Ищу продукты...")
     
     # Поиск через FatSecret API
-    foods = fatsecret.search_foods(query)
+    foods = await fatsecret.search_foods(query)
     
     if not foods:
         await message.answer(
@@ -721,7 +721,7 @@ async def process_food_search(message: Message, state: FSMContext):
         return
     
     # Показываем результаты поиска
-    text = f"🔍 *Результаты поиска:*\n\n"
+    text = "🔍 *Результаты поиска:*\n\n"
     builder = InlineKeyboardBuilder()
     
     for i, food in enumerate(foods[:10], 1):
@@ -737,7 +737,7 @@ async def process_food_search(message: Message, state: FSMContext):
             )
         )
     
-    text += f"\nВыберите продукт из списка или введите запрос заново:"
+    text += "\nВыберите продукт из списка или введите запрос заново:"
     
     builder.row(
         InlineKeyboardButton(text="🔄 НОВЫЙ ПОИСК", callback_data="search_food"),
@@ -751,7 +751,7 @@ async def select_food(callback: CallbackQuery, state: FSMContext):
     food_id = callback.data.split(":")[1]
     
     # Получаем детали продукта
-    food_data = fatsecret.get_food_details(food_id)
+    food_data = await fatsecret.get_food_details(food_id)
     
     if not food_data:
         await callback.answer("❌ Ошибка загрузки продукта", show_alert=True)

@@ -1,5 +1,4 @@
-import requests
-import json
+import httpx
 import logging
 from typing import Optional, Dict, List
 
@@ -13,8 +12,8 @@ class FatSecretService:
         self.token_url = "https://oauth.fatsecret.com/connect/token"
         self.api_url = "https://platform.fatsecret.com/rest/server.api"
     
-    def _get_token(self):
-        """Получение OAuth2 токена напрямую через requests"""
+    async def _get_token(self):
+        """Получение OAuth2 токена напрямую через async HTTP клиент."""
         if self.token:
             return self.token
         
@@ -26,7 +25,8 @@ class FatSecretService:
                 'scope': 'basic'
             }
             
-            response = requests.post(self.token_url, data=data)
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.post(self.token_url, data=data)
             
             if response.status_code == 200:
                 self.token = response.json()
@@ -40,9 +40,9 @@ class FatSecretService:
             logger.error(f"❌ Ошибка: {e}")
             return None
     
-    def search_foods(self, query: str, page: int = 0, max_results: int = 20) -> Optional[List[Dict]]:
+    async def search_foods(self, query: str, page: int = 0, max_results: int = 20) -> Optional[List[Dict]]:
         """Поиск продуктов"""
-        token = self._get_token()
+        token = await self._get_token()
         if not token:
             return []
         
@@ -57,7 +57,8 @@ class FatSecretService:
         headers = {'Authorization': f"Bearer {token['access_token']}"}
         
         try:
-            response = requests.get(self.api_url, params=params, headers=headers)
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.api_url, params=params, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()
@@ -72,9 +73,9 @@ class FatSecretService:
             logger.error(f"Ошибка запроса: {e}")
             return []
     
-    def get_food_details(self, food_id: str) -> Optional[Dict]:
+    async def get_food_details(self, food_id: str) -> Optional[Dict]:
         """Получение деталей продукта"""
-        token = self._get_token()
+        token = await self._get_token()
         if not token:
             return None
         
@@ -87,7 +88,8 @@ class FatSecretService:
         headers = {'Authorization': f"Bearer {token['access_token']}"}
         
         try:
-            response = requests.get(self.api_url, params=params, headers=headers)
+            async with httpx.AsyncClient(timeout=10) as client:
+                response = await client.get(self.api_url, params=params, headers=headers)
             
             if response.status_code == 200:
                 data = response.json()

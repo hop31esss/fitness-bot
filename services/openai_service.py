@@ -1,8 +1,7 @@
 import openai
 import logging
 from typing import Optional, Dict, List
-from datetime import datetime, timedelta
-from config import OPENAI_API_KEY, AITUNNEL_API_KEY, OPENAI_ENABLED
+from config import AITUNNEL_API_KEY, OPENAI_ENABLED
 
 logger = logging.getLogger(__name__)
 
