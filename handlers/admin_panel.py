@@ -335,8 +335,9 @@ async def process_premium_days(message: Message, state: FSMContext):
                 f"Теперь вам доступны все премиум-функции бота! 💪"
             )
             notify_status = "✅ Уведомление отправлено"
-        except:
-            notify_status = "⚠️ Не удалось отправить уведомление (пользователь не запускал бота)"
+        except Exception as e:
+            logger.exception("⚠️ Не удалось отправить уведомление (пользователь не запускал бота)", exc_info=e)
+
         
         await message.answer(
             f"✅ *Премиум выдан!*\n\n"
@@ -399,8 +400,8 @@ async def process_revoke_user_id(message: Message, state: FSMContext):
                 "Спасибо за использование бота! 🙏"
             )
             notify_status = "✅ Уведомление отправлено"
-        except:
-            notify_status = "⚠️ Не удалось отправить уведомление"
+        except Exception as e:
+            logger.exception("⚠️ Не удалось отправить уведомление", exc_info=e)
         
         await message.answer(
             f"✅ *Премиум отозван!*\n\n"
