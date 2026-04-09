@@ -4,6 +4,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 import logging
+import os
 
 from database.base import db
 from utils.logging import log_action
@@ -240,7 +241,6 @@ async def settings_export(callback: CallbackQuery):
     """Экспорт данных"""
     log_action(callback.from_user.id, "settings_export")
     from services.export import export_user_data
-    import os
     
     await callback.message.edit_text("⏳ Начинаем экспорт ваших данных...")
     
