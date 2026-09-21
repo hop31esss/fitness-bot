@@ -14,17 +14,19 @@ from config import ADMIN_ID
 router = Router()
 logger = logging.getLogger(__name__)
 
-router = Router()
-
-# ВАШ РЕАЛЬНЫЙ ID (ТОЛЬКО ОН ИМЕЕТ ДОСТУП)
-ADMIN_USER_ID = 385450652
-
 # Состояния для FSM
 class BroadcastStates(StatesGroup):
     waiting_message = State()
     waiting_confirm = State()
 
 class PremiumGrantStates(StatesGroup):
+    waiting_user_id = State()
+    waiting_days = State()
+
+class PremiumRevokeStates(StatesGroup):
+    waiting_user_id = State()
+
+class PremiumExtendStates(StatesGroup):
     waiting_user_id = State()
     waiting_days = State()
 
@@ -90,7 +92,7 @@ async def admin_panel(message: Message):
 @router.callback_query(F.data == "admin_stats")
 async def admin_stats_handler(callback: CallbackQuery):
     """Статистика бота"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -126,7 +128,7 @@ async def admin_stats_handler(callback: CallbackQuery):
 @router.callback_query(F.data == "admin_users")
 async def admin_users_handler(callback: CallbackQuery):
     """Список пользователей"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -172,7 +174,7 @@ async def admin_users_handler(callback: CallbackQuery):
 @router.callback_query(F.data == "admin_premium_menu")
 async def admin_premium_menu(callback: CallbackQuery):
     """Меню управления премиум"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -204,7 +206,7 @@ async def admin_premium_menu(callback: CallbackQuery):
 @router.callback_query(F.data == "premium_list")
 async def premium_list(callback: CallbackQuery):
     """Список премиум-пользователей"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -241,7 +243,7 @@ async def premium_list(callback: CallbackQuery):
 @router.callback_query(F.data == "premium_grant")
 async def premium_grant_start(callback: CallbackQuery, state: FSMContext):
     """Начало выдачи премиум"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -257,11 +259,14 @@ async def premium_grant_start(callback: CallbackQuery, state: FSMContext):
 @router.message(PremiumGrantStates.waiting_user_id)
 async def process_premium_user_id(message: Message, state: FSMContext):
     """Обработка ID пользователя"""
-    if message.from_user.id != ADMIN_USER_ID:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("❌ Нет доступа")
         await state.clear()
         return
-    
+
+    if not message.text:
+        await message.answer("❌ Введите числовой Telegram ID или /cancel.")
+        return
     if message.text == "/cancel":
         await message.answer("❌ Операция отменена.")
         await state.clear()
@@ -298,7 +303,7 @@ async def process_premium_user_id(message: Message, state: FSMContext):
 @router.message(PremiumGrantStates.waiting_days)
 async def process_premium_days(message: Message, state: FSMContext):
     """Обработка количества дней"""
-    if message.from_user.id != ADMIN_USER_ID:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("❌ Нет доступа")
         await state.clear()
         return
@@ -359,7 +364,7 @@ async def process_premium_days(message: Message, state: FSMContext):
 @router.callback_query(F.data == "premium_revoke")
 async def premium_revoke_start(callback: CallbackQuery, state: FSMContext):
     """Начало отзыва премиум"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -368,18 +373,21 @@ async def premium_revoke_start(callback: CallbackQuery, state: FSMContext):
         "Введите Telegram ID пользователя, у которого хотите забрать премиум:"
     )
     
-    await state.set_state(PremiumGrantStates.waiting_user_id)
+    await state.set_state(PremiumRevokeStates.waiting_user_id)
     await callback.answer()
 
-# Используем тот же обработчик message, но с проверкой на отзыв
-@router.message(PremiumGrantStates.waiting_user_id)
+@router.message(PremiumRevokeStates.waiting_user_id)
 async def process_revoke_user_id(message: Message, state: FSMContext):
     """Обработка отзыва премиум"""
-    if message.from_user.id != ADMIN_USER_ID:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("❌ Нет доступа")
         await state.clear()
         return
-    
+
+    if not message.text:
+        await message.answer("❌ Введите числовой Telegram ID.")
+        return
+
     try:
         target_user_id = int(message.text.strip())
         
@@ -421,7 +429,7 @@ async def process_revoke_user_id(message: Message, state: FSMContext):
 @router.callback_query(F.data == "premium_extend")
 async def premium_extend_start(callback: CallbackQuery, state: FSMContext):
     """Начало продления премиум"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -430,15 +438,84 @@ async def premium_extend_start(callback: CallbackQuery, state: FSMContext):
         "Введите Telegram ID пользователя, которому хотите продлить премиум:"
     )
     
-    await state.set_state(PremiumGrantStates.waiting_user_id)
+    await state.set_state(PremiumExtendStates.waiting_user_id)
     await callback.answer()
+
+
+@router.message(PremiumExtendStates.waiting_user_id)
+async def process_extend_user_id(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Нет доступа")
+        await state.clear()
+        return
+    if not message.text:
+        await message.answer("❌ Введите числовой Telegram ID.")
+        return
+    try:
+        target_user_id = int(message.text.strip())
+    except ValueError:
+        await message.answer("❌ Неверный формат ID. Введите число:")
+        return
+    await state.update_data(target_user_id=target_user_id)
+    await message.answer("Введите количество дней для продления (от 1 до 365):")
+    await state.set_state(PremiumExtendStates.waiting_days)
+
+
+@router.message(PremiumExtendStates.waiting_days)
+async def process_extend_days(message: Message, state: FSMContext):
+    if message.from_user.id != ADMIN_ID:
+        await message.answer("❌ Нет доступа")
+        await state.clear()
+        return
+    if not message.text:
+        await message.answer("❌ Введите число дней.")
+        return
+    try:
+        days = int(message.text.strip())
+        if days < 1 or days > 365:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите корректное число дней (от 1 до 365):")
+        return
+
+    data = await state.get_data()
+    target_user_id = data["target_user_id"]
+    now = datetime.now()
+    current = await db.fetch_one(
+        "SELECT subscription_until FROM users WHERE user_id = ?",
+        (target_user_id,),
+    )
+    base = now
+    if current and current["subscription_until"]:
+        try:
+            current_until = datetime.fromisoformat(str(current["subscription_until"]).replace("Z", "+00:00"))
+            if current_until.replace(tzinfo=None) > now:
+                base = current_until.replace(tzinfo=None)
+        except Exception:
+            pass
+    until = base + timedelta(days=days)
+    await db.execute(
+        """INSERT INTO users (user_id, is_subscribed, subscription_until)
+           VALUES (?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             is_subscribed = TRUE,
+             subscription_until = ?""",
+        (target_user_id, True, until.isoformat(), until.isoformat()),
+    )
+    await message.answer(
+        f"✅ Премиум продлён до {until.strftime('%d.%m.%Y')} (ID `{target_user_id}`).",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="👑 Управление премиум", callback_data="admin_premium_menu")
+        ).as_markup(),
+    )
+    await state.clear()
 
 # ================ МЕНЮ РАССЫЛКИ ================
 
 @router.callback_query(F.data == "admin_broadcast_menu")
 async def admin_broadcast_menu(callback: CallbackQuery):
     """Меню рассылки"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -466,7 +543,7 @@ async def admin_broadcast_menu(callback: CallbackQuery):
 @router.callback_query(F.data.in_(["broadcast_all", "broadcast_premium", "broadcast_test"]))
 async def broadcast_start(callback: CallbackQuery, state: FSMContext):
     """Начало создания рассылки"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -501,7 +578,7 @@ async def broadcast_start(callback: CallbackQuery, state: FSMContext):
 @router.message(BroadcastStates.waiting_message)
 async def process_broadcast_message(message: Message, state: FSMContext):
     """Обработка сообщения для рассылки"""
-    if message.from_user.id != ADMIN_USER_ID:
+    if message.from_user.id != ADMIN_ID:
         await message.answer("❌ Нет доступа")
         await state.clear()
         return
@@ -553,7 +630,7 @@ async def process_broadcast_message(message: Message, state: FSMContext):
 @router.callback_query(F.data == "confirm_send")
 async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
     """Подтверждение и отправка рассылки"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -615,7 +692,7 @@ async def confirm_broadcast(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "cancel_send")
 async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
     """Отмена рассылки"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     
@@ -628,7 +705,7 @@ async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "admin_panel")
 async def back_to_admin(callback: CallbackQuery):
     """Возврат в админ-панель"""
-    if callback.from_user.id != ADMIN_USER_ID:
+    if callback.from_user.id != ADMIN_ID:
         await callback.answer("❌ Нет доступа", show_alert=True)
         return
     

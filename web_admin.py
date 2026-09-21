@@ -5,18 +5,20 @@ import secrets
 import os
 import time
 
+_UNSAFE_PASSWORDS = {"", "change-me-now", "YOUR_STRONG_ADMIN_PASSWORD"}
+
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(16)
+_secret = os.getenv("ADMIN_SECRET_KEY") or os.getenv("SECRET_KEY")
+app.secret_key = _secret if _secret else secrets.token_hex(16)
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 app.config["SESSION_COOKIE_SECURE"] = os.getenv("SESSION_COOKIE_SECURE", "false").lower() == "true"
 app.permanent_session_lifetime = timedelta(hours=12)
 
-# Конфигурация
-# Пароль администратора берется из переменной окружения ADMIN_PASSWORD.
-# Если переменная не задана, используется небезопасный дефолт, который НУЖНО сменить.
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "change-me-now")
-DB_PATH = "fitness_bot.db"
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "")
+_database_url = os.getenv("DATABASE_URL", "sqlite+aiosqlite:///fitness_bot.db")
+_database_path = _database_url.removeprefix("sqlite+aiosqlite:///").removeprefix("sqlite:///")
+DB_PATH = os.getenv("WEB_ADMIN_DB_PATH", _database_path)
 MAX_LOGIN_ATTEMPTS = int(os.getenv("ADMIN_MAX_LOGIN_ATTEMPTS", "5"))
 LOGIN_WINDOW_SECONDS = int(os.getenv("ADMIN_LOGIN_WINDOW_SECONDS", "900"))  # 15 минут
 LOCKOUT_SECONDS = int(os.getenv("ADMIN_LOCKOUT_SECONDS", "900"))  # 15 минут
@@ -92,7 +94,8 @@ def login():
         )
 
     if request.method == 'POST':
-        if request.form['password'] == ADMIN_PASSWORD:
+        submitted = request.form.get("password", "")
+        if ADMIN_PASSWORD not in _UNSAFE_PASSWORDS and secrets.compare_digest(submitted, ADMIN_PASSWORD):
             _login_attempts.pop(client_ip, None)
             session.clear()
             session.permanent = True
@@ -180,7 +183,7 @@ def backup():
     backup_path = os.path.join(backup_dir, filename)
     
     # Копируем базу
-    shutil.copy2('fitness_bot.db', backup_path)
+    shutil.copy2(DB_PATH, backup_path)
     
     # Размер файла
     size = os.path.getsize(backup_path) / 1024 / 1024  # в MB
@@ -290,4 +293,7 @@ def logout():
     return redirect(url_for('login'))
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    if ADMIN_PASSWORD in _UNSAFE_PASSWORDS:
+        raise SystemExit("Задайте сильный ADMIN_PASSWORD в окружении перед запуском веб-админки.")
+    host = os.getenv("WEB_ADMIN_HOST", "127.0.0.1")
+    app.run(host=host, port=int(os.getenv("WEB_ADMIN_PORT", "5000")), debug=False)

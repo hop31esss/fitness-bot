@@ -33,7 +33,7 @@ async def test_start_payload_has_open_full_menu_button(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_open_full_menu_shows_4_items_and_back():
+async def test_open_full_menu_shows_main_keyboard():
     callback = _fake_callback("back_to_main")
     await start_handlers.back_to_main(callback)
 
@@ -41,11 +41,10 @@ async def test_open_full_menu_shows_4_items_and_back():
     callback.message.edit_text.assert_awaited_once()
     _, kwargs = callback.message.edit_text.await_args
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "📘 Журнал тренировок" in labels
-    assert "📔 Дневник тренировок" in labels
-    assert "📚 Мои программы" in labels
-    assert "💪 Упражнения" in labels
-    assert labels[-1] == "🔙 Назад"
+    assert "📋 ЖУРНАЛ ТРЕНИРОВОК" in labels
+    assert "📊 ПРОГРЕСС И СТАТИСТИКА" in labels
+    assert "📔 ДНЕВНИК ТРЕНИРОВОК" in labels
+    assert "📚 МОИ ПРОГРАММЫ" in labels
 
 
 @pytest.mark.asyncio
@@ -61,14 +60,19 @@ async def test_open_sub_menu_from_full_menu():
 
 
 @pytest.mark.asyncio
-async def test_open_journal_section_and_back_button_present():
+async def test_open_journal_section_delegates_to_training(monkeypatch):
     callback = _fake_callback("full_section_journal")
+
+    async def fake_journal(cb):
+        await cb.message.edit_text("JOURNAL", reply_markup=start_handlers.build_section_back_menu().as_markup())
+        await cb.answer()
+
+    monkeypatch.setattr("handlers.training.training_journal", fake_journal)
     await start_handlers.full_section_journal(callback)
 
     callback.message.edit_text.assert_awaited_once()
-    _, kwargs = callback.message.edit_text.await_args
-    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert labels == ["🔙 Назад"]
+    args, _ = callback.message.edit_text.await_args
+    assert args[0] == "JOURNAL"
 
 
 @pytest.mark.asyncio

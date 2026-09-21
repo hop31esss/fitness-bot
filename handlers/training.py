@@ -61,6 +61,9 @@ async def process_exercise_name(message: Message, state: FSMContext):
         await message.answer("❌ Добавление отменено.")
         await state.clear()
         return
+    if not message.text:
+        await message.answer("❌ Пришлите название текстом.")
+        return
     
     exercise_name = message.text.strip()
     await state.update_data(exercise_name=exercise_name)

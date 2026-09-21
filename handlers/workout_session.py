@@ -418,6 +418,9 @@ async def process_exercise_type(callback: CallbackQuery, state: FSMContext):
 
 @router.message(WorkoutSessionStates.entering_exercise_name)
 async def process_exercise_name(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("❌ Пришлите название текстом или /cancel.")
+        return
     await state.update_data(exercise_name=message.text.strip())
     data = await state.get_data()
     if data['current_exercise_type'] == 'strength':
@@ -430,6 +433,9 @@ async def process_exercise_name(message: Message, state: FSMContext):
 @router.message(WorkoutSessionStates.entering_sets)
 async def process_sets(message: Message, state: FSMContext):
     """Обработка подходов - начинаем ввод данных по подходам"""
+    if not message.text:
+        await message.answer("❌ Введите число")
+        return
     try:
         sets = int(message.text)
         if sets <= 0:
@@ -438,7 +444,7 @@ async def process_sets(message: Message, state: FSMContext):
         # Инициализируем данные для подходов
         set_data = []
         for i in range(sets):
-            set_data.append({'weight': None, 'reps': None})
+            set_data.append({'weight': None, 'reps': None, 'weight_done': False})
         
         await state.update_data(
             sets=sets,
@@ -504,28 +510,29 @@ async def weight_each_method(callback: CallbackQuery, state: FSMContext):
 @router.message(WorkoutSessionStates.entering_set_data)
 async def process_set_data(message: Message, state: FSMContext):
     """Обработка ввода данных для текущего подхода (сначала вес, потом повторения)"""
+    if not message.text:
+        await message.answer("❌ Пришлите число текстом или '-' без веса.")
+        return
     data = await state.get_data()
     current_set = data['current_set']
     total_sets = data['sets']
     set_data = data['set_data']
     
-    # Проверяем, что сейчас вводим - вес или повторения
     current_entry = set_data[current_set-1]
     
-    # Если вес ещё не введён
-    if current_entry['weight'] is None:
-        # Сохраняем вес
-        if message.text == '-':
-            current_entry['weight'] = None
+    if not current_entry.get('weight_done'):
+        if message.text.strip() == '-':
+            current_entry['weight'] = 0
         else:
             try:
-                weight = float(message.text)
-                current_entry['weight'] = weight
+                current_entry['weight'] = float(message.text.replace(',', '.'))
             except ValueError:
                 await message.answer("❌ Введите число или '-'")
                 return
+        current_entry['weight_done'] = True
+        set_data[current_set-1] = current_entry
+        await state.update_data(set_data=set_data)
         
-        # Спрашиваем повторения с кнопкой выхода
         builder = InlineKeyboardBuilder()
         builder.row(
             InlineKeyboardButton(text="⏸️ ПРИОСТАНОВИТЬ", callback_data="save_workout")
@@ -536,42 +543,34 @@ async def process_set_data(message: Message, state: FSMContext):
             f"Введите количество повторений:",
             reply_markup=builder.as_markup()
         )
-        
-    else:
-        # Сохраняем повторения
-        try:
-            reps = int(message.text)
-            if reps <= 0:
-                raise ValueError
-            current_entry['reps'] = reps
-            
-            # Обновляем данные
-            set_data[current_set-1] = current_entry
-            await state.update_data(set_data=set_data)
-            
-            # Переходим к следующему подходу или завершаем
-            if current_set < total_sets:
-                current_set += 1
-                await state.update_data(current_set=current_set)
-                
-                # Спрашиваем вес для следующего подхода с кнопкой выхода
-                builder = InlineKeyboardBuilder()
-                builder.row(
-                    InlineKeyboardButton(text="⏸️ ПРИОСТАНОВИТЬ", callback_data="save_workout")
-                )
-                
-                await message.answer(
-                    f"⚖️ *Подход {current_set} из {total_sets}*\n\n"
-                    f"Введите вес (кг) или '-' если без веса:",
-                    reply_markup=builder.as_markup()
-                )
-            else:
-                # Все подходы введены - сохраняем упражнение
-                await save_exercise_from_set_data(state, message)
-                await show_workout_menu(message, state)
-                
-        except ValueError:
-            await message.answer("❌ Введите число")
+        return
+
+    try:
+        reps = int(message.text)
+        if reps <= 0:
+            raise ValueError
+        current_entry['reps'] = reps
+        set_data[current_set-1] = current_entry
+        await state.update_data(set_data=set_data)
+
+        if current_set < total_sets:
+            current_set += 1
+            await state.update_data(current_set=current_set)
+            builder = InlineKeyboardBuilder()
+            builder.row(
+                InlineKeyboardButton(text="⏸️ ПРИОСТАНОВИТЬ", callback_data="save_workout")
+            )
+            await message.answer(
+                f"⚖️ *Подход {current_set} из {total_sets}*\n\n"
+                f"Введите вес (кг) или '-' если без веса:",
+                reply_markup=builder.as_markup()
+            )
+        else:
+            await save_exercise_from_set_data(state, message)
+            await show_workout_menu(message, state)
+
+    except ValueError:
+        await message.answer("❌ Введите число")
 
 @router.message(WorkoutSessionStates.entering_set_reps)
 async def process_set_reps(message: Message, state: FSMContext):
@@ -735,7 +734,14 @@ async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
 
 @router.message(WorkoutSessionStates.entering_weight)
 async def process_weight(message: Message, state: FSMContext):
-    weight = None if message.text == '-' else float(message.text)
+    if not message.text:
+        await message.answer("❌ Введите вес или '-'")
+        return
+    try:
+        weight = None if message.text.strip() == '-' else float(message.text.replace(',', '.'))
+    except ValueError:
+        await message.answer("❌ Введите число или '-'")
+        return
     await state.update_data(weight=weight)
     await save_exercise(state, message)
     await show_workout_menu(message, state)

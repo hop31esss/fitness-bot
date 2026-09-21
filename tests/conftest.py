@@ -1,6 +1,11 @@
-import pytest
+import os
 import sys
 from pathlib import Path
+
+os.environ.setdefault("BOT_TOKEN", "1234567890:ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghi")
+os.environ.setdefault("ADMIN_ID", "1")
+
+import pytest
 from aiogram import Bot
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]

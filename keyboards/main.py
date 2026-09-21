@@ -31,11 +31,6 @@ def get_main_keyboard(user_id: int = None) -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
     )
     
-    # ========== ИНСТРУМЕНТЫ (ТАЙМЕР СКРЫТ ИЗ МЕНЮ) ==========
-    builder.row(
-        InlineKeyboardButton(text="📅 КАЛЕНДАРЬ", callback_data="calendar")
-    )
-    
     # ========== СОЦИАЛЬНОЕ ==========
     builder.row(
         InlineKeyboardButton(text="🏆 ЛИДЕРБОРД", callback_data="global_leaderboard"),

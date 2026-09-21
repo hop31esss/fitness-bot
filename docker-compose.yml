@@ -9,6 +9,9 @@ services:
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_ID=${ADMIN_ID}
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - DATABASE_URL=sqlite+aiosqlite:///data/fitness_bot.db
+      - USE_FATSECRET=false
+      - APPLE_HEALTH_ENABLED=false
     volumes:
       - ./data:/app/data
       - ./backups:/app/backups

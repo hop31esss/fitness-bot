@@ -1,7 +1,8 @@
+import asyncio
 import logging
 from yookassa import Configuration, Payment
 import uuid
-from typing import Optional, Dict
+from typing import Optional, Dict, Any
 
 from config import YOOKASSA_SHOP_ID, YOOKASSA_SECRET_KEY
 
@@ -37,22 +38,25 @@ class YooKassaService:
             # Генерируем уникальный IDempotence key
             idempotence_key = str(uuid.uuid4())
             
-            # Создаем платеж
-            payment = Payment.create({
-                "amount": {
-                    "value": f"{amount:.2f}",
-                    "currency": "RUB"
+            payment = await asyncio.to_thread(
+                Payment.create,
+                {
+                    "amount": {
+                        "value": f"{amount:.2f}",
+                        "currency": "RUB"
+                    },
+                    "confirmation": {
+                        "type": "redirect",
+                        "return_url": return_url or "https://t.me/StrengthAIBot"
+                    },
+                    "capture": True,
+                    "description": description,
+                    "metadata": {
+                        "user_id": str(user_id)
+                    }
                 },
-                "confirmation": {
-                    "type": "redirect",
-                    "return_url": return_url or "https://t.me/StrengthAIBot"
-                },
-                "capture": True,
-                "description": description,
-                "metadata": {
-                    "user_id": str(user_id)
-                }
-            }, idempotence_key)
+                idempotence_key,
+            )
             
             logger.info(f"✅ Платеж создан: {payment.id}")
             return {
@@ -67,14 +71,27 @@ class YooKassaService:
             return None
     
     @staticmethod
+    async def get_payment(payment_id: str) -> Optional[Dict[str, Any]]:
+        """Полные данные платежа, включая metadata.user_id."""
+        try:
+            payment = await asyncio.to_thread(Payment.find_one, payment_id)
+            metadata = getattr(payment, "metadata", None) or {}
+            return {
+                "id": payment.id,
+                "status": payment.status,
+                "user_id": metadata.get("user_id"),
+                "amount": payment.amount.value,
+                "currency": payment.amount.currency,
+            }
+        except Exception as e:
+            logger.error(f"❌ Ошибка получения платежа: {e}")
+            return None
+
+    @staticmethod
     async def get_payment_status(payment_id: str) -> Optional[str]:
         """Получение статуса платежа"""
-        try:
-            payment = Payment.find_one(payment_id)
-            return payment.status
-        except Exception as e:
-            logger.error(f"❌ Ошибка получения статуса: {e}")
-            return None
+        payment = await YooKassaService.get_payment(payment_id)
+        return payment["status"] if payment else None
     
     @staticmethod
     async def capture_payment(payment_id: str, amount: float) -> bool:

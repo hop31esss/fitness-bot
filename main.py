@@ -2,8 +2,10 @@ import asyncio
 import logging
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import ErrorEvent
 from config import BOT_TOKEN
 from database.base import init_db, close_db
+from middlewares.cancel import CancelMiddleware
 
 # --- ИМПОРТЫ РОУТЕРОВ  ---
 from handlers.start import router as start_router
@@ -48,6 +50,11 @@ async def main():
     bot = Bot(token=BOT_TOKEN)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
+    dp.message.middleware(CancelMiddleware())
+
+    @dp.error()
+    async def on_error(event: ErrorEvent):
+        logger.exception("Unhandled update error: %s", event.exception)
 
     # Инициализация базы данных (создаст основные таблицы)
     await init_db()
@@ -102,7 +109,7 @@ async def main():
 
     # Запуск бота
     try:
-        await dp.start_polling(bot, skip_updates=True)
+        await dp.start_polling(bot)
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")
     finally:

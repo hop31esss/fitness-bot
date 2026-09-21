@@ -109,8 +109,11 @@ async def set_units(callback: CallbackQuery):
     
     # Обновляем настройки
     await db.execute(
-        """INSERT OR REPLACE INTO user_settings (user_id, units) 
-        VALUES (?, ?)""",
+        """INSERT INTO user_settings (user_id, units)
+           VALUES (?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             units = excluded.units,
+             updated_at = CURRENT_TIMESTAMP""",
         (user_id, units)
     )
     
@@ -173,8 +176,11 @@ async def toggle_notifications(callback: CallbackQuery):
     enabled = True if action == 'on' else False
     
     await db.execute(
-        """INSERT OR REPLACE INTO user_settings 
-        (user_id, notifications_enabled) VALUES (?, ?)""",
+        """INSERT INTO user_settings (user_id, notifications_enabled)
+           VALUES (?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             notifications_enabled = excluded.notifications_enabled,
+             updated_at = CURRENT_TIMESTAMP""",
         (user_id, enabled)
     )
     
@@ -198,6 +204,9 @@ async def change_notification_time(callback: CallbackQuery, state: FSMContext):
 async def process_notification_time(message: Message, state: FSMContext):
     """Обработка времени уведомлений"""
     log_action(message.from_user.id, "settings_process_notification_time")
+    if not message.text:
+        await message.answer("❌ Пришлите время текстом, например 18:00.")
+        return
     time_text = message.text.strip()
     
     # Простая валидация времени
@@ -215,9 +224,12 @@ async def process_notification_time(message: Message, state: FSMContext):
     
     # Сохраняем время
     await db.execute(
-        """INSERT OR REPLACE INTO user_settings 
-        (user_id, notifications_enabled, notification_time) 
-        VALUES (?, ?, ?)""",
+        """INSERT INTO user_settings (user_id, notifications_enabled, notification_time)
+           VALUES (?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             notifications_enabled = excluded.notifications_enabled,
+             notification_time = excluded.notification_time,
+             updated_at = CURRENT_TIMESTAMP""",
         (user_id, True, time_text)
     )
     

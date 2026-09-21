@@ -6,6 +6,7 @@ from datetime import date
 
 from database.base import db
 from handlers.referral import handle_referral_join
+from keyboards.main import get_main_keyboard
 from utils.logging import log_action
 
 router = Router()
@@ -84,11 +85,14 @@ async def cmd_start(message: Message):
 
     # Регистрируем пользователя
     await db.execute(
-        """INSERT OR REPLACE INTO users 
-        (user_id, username, first_name, last_name) 
-        VALUES (?, ?, ?, ?)""",
-        (user_id, message.from_user.username, 
-         message.from_user.first_name, message.from_user.last_name)
+        """INSERT INTO users (user_id, username, first_name, last_name)
+           VALUES (?, ?, ?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             username = excluded.username,
+             first_name = excluded.first_name,
+             last_name = excluded.last_name""",
+        (user_id, message.from_user.username,
+         message.from_user.first_name, message.from_user.last_name),
     )
 
     # Обрабатываем реферальный старт (7 дней другу сразу, бонус рефереру после удержания).
@@ -99,10 +103,12 @@ async def cmd_start(message: Message):
 
 @router.callback_query(F.data == "back_to_main")
 async def back_to_main(callback: CallbackQuery):
-    """Открывает новое полное меню (4 пункта + назад)."""
+    """Возврат в рабочее главное меню."""
     log_action(callback.from_user.id, "open_full_menu")
-    keyboard = build_full_main_menu().as_markup()
-    await callback.message.edit_text(text="📋 *Полное меню*\n\nВыберите пункт:", reply_markup=keyboard)
+    await callback.message.edit_text(
+        text="👋 Выбирай, что сделать:",
+        reply_markup=get_main_keyboard(),
+    )
     await callback.answer()
 
 
@@ -129,38 +135,26 @@ async def full_menu_open_sub(callback: CallbackQuery):
 @router.callback_query(F.data == "full_section_journal")
 async def full_section_journal(callback: CallbackQuery):
     log_action(callback.from_user.id, "full_section_journal")
-    await callback.message.edit_text(
-        text="📘 Вы открыли журнал тренировок",
-        reply_markup=build_section_back_menu().as_markup(),
-    )
-    await callback.answer()
+    from handlers.training import training_journal
+    await training_journal(callback)
 
 
 @router.callback_query(F.data == "full_section_diary")
 async def full_section_diary(callback: CallbackQuery):
     log_action(callback.from_user.id, "full_section_diary")
-    await callback.message.edit_text(
-        text="📔 Вы открыли дневник тренировок",
-        reply_markup=build_section_back_menu().as_markup(),
-    )
-    await callback.answer()
+    from handlers.workout_journal import workout_journal_menu
+    await workout_journal_menu(callback)
 
 
 @router.callback_query(F.data == "full_section_programs")
 async def full_section_programs(callback: CallbackQuery):
     log_action(callback.from_user.id, "full_section_programs")
-    await callback.message.edit_text(
-        text="📚 Вы открыли раздел программ",
-        reply_markup=build_section_back_menu().as_markup(),
-    )
-    await callback.answer()
+    from handlers.workout_templates import templates_menu
+    await templates_menu(callback)
 
 
 @router.callback_query(F.data == "full_section_exercises")
 async def full_section_exercises(callback: CallbackQuery):
     log_action(callback.from_user.id, "full_section_exercises")
-    await callback.message.edit_text(
-        text="💪 Вы открыли раздел упражнений",
-        reply_markup=build_section_back_menu().as_markup(),
-    )
-    await callback.answer()
+    from handlers.exercises import exercises_main_menu
+    await exercises_main_menu(callback)

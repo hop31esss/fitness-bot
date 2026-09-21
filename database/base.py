@@ -1,20 +1,36 @@
-import aiosqlite
+import os
 import logging
 from typing import List, Tuple, Optional
+
+import aiosqlite
+
 from config import DATABASE_URL
 
 logger = logging.getLogger(__name__)
 
+
+def sqlite_path_from_url(url: str) -> str:
+    """Extract a filesystem path from a sqlite / aiosqlite URL."""
+    for prefix in ("sqlite+aiosqlite:///", "sqlite:///"):
+        if url.startswith(prefix):
+            return url[len(prefix):]
+    return url
+
+
 class Database:
     def __init__(self):
-        self.db_path = DATABASE_URL.replace("sqlite+aiosqlite:///", "")
+        self.db_path = sqlite_path_from_url(DATABASE_URL)
         self.conn: Optional[aiosqlite.Connection] = None
 
     async def connect(self):
         """Установка соединения с БД"""
+        parent = os.path.dirname(self.db_path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
         self.conn = await aiosqlite.connect(self.db_path)
         self.conn.row_factory = aiosqlite.Row
         await self.conn.execute("PRAGMA foreign_keys = ON")
+        await self.conn.execute("PRAGMA journal_mode = WAL")
         logger.info("Database connection established")
 
     async def close(self):
@@ -23,24 +39,25 @@ class Database:
             await self.conn.close()
             logger.info("Database connection closed")
 
-    async def execute(self, query: str, params: Tuple = ()) -> aiosqlite.Cursor:
-        """Выполнение запроса"""
+    async def execute(self, query: str, params: Tuple = (), *, commit: bool = True) -> aiosqlite.Cursor:
+        """Выполнение запроса. SELECT должен вызывать с commit=False."""
         if not self.conn:
             await self.connect()
         cursor = await self.conn.execute(query, params)
-        await self.conn.commit()
+        if commit:
+            await self.conn.commit()
         return cursor
 
     async def fetch_one(self, query: str, params: Tuple = ()) -> Optional[dict]:
         """Получение одной записи"""
-        cursor = await self.execute(query, params)
+        cursor = await self.execute(query, params, commit=False)
         result = await cursor.fetchone()
         await cursor.close()
         return dict(result) if result else None
 
     async def fetch_all(self, query: str, params: Tuple = ()) -> List[dict]:
         """Получение всех записей"""
-        cursor = await self.execute(query, params)
+        cursor = await self.execute(query, params, commit=False)
         results = await cursor.fetchall()
         await cursor.close()
         return [dict(row) for row in results]
@@ -304,7 +321,33 @@ async def create_tables():
     """)
     logger.info("✅ Таблицы workout_sessions/workout_exercises созданы")
 
-    # Идемпотентные миграции колонок
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS referrals (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            referrer_id INTEGER NOT NULL,
+            referred_id INTEGER UNIQUE NOT NULL,
+            code TEXT NOT NULL,
+            reward_granted_at TIMESTAMP,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("✅ Таблица referrals создана")
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS payments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            provider TEXT NOT NULL,
+            provider_payment_id TEXT NOT NULL UNIQUE,
+            amount INTEGER,
+            currency TEXT,
+            status TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    logger.info("✅ Таблица payments создана")
+
+    # Идемпотентные миграции колонок (после CREATE всех таблиц)
     migration_queries = [
         "ALTER TABLE workout_sessions ADD COLUMN template_id INTEGER",
         "ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE",
@@ -326,19 +369,6 @@ async def create_tables():
                 and "no such table" not in text
             ):
                 raise
-
-# Таблица приглашений
-    await db.execute("""
-        CREATE TABLE IF NOT EXISTS referrals (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            referrer_id INTEGER NOT NULL,
-            referred_id INTEGER UNIQUE NOT NULL,
-            code TEXT NOT NULL,
-            reward_granted_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    """)
-    logger.info("✅ Таблица referrals создана")
     
     # Индексы для оптимизации
     await db.execute("CREATE INDEX IF NOT EXISTS idx_workouts_user_date ON workouts(user_id, created_at)")

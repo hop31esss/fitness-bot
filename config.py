@@ -32,20 +32,22 @@ if not _validate_or_none(BOT_TOKEN):
         BOT_TOKEN = BOT_TOKEN[1:-1].strip()
 
     if not _validate_or_none(BOT_TOKEN):
-        safe_prefix = BOT_TOKEN[:5] if BOT_TOKEN else ""
         safe_len = len(BOT_TOKEN) if BOT_TOKEN else 0
         raise ValueError(
-            f"BOT_TOKEN имеет неверный формат. len={safe_len}, prefix={safe_prefix!r}. "
-            "Проверьте переменную окружения/ .env (без кавычек и пробелов)."
+            f"BOT_TOKEN имеет неверный формат (len={safe_len}). "
+            "Проверьте переменную окружения / .env (без кавычек и пробелов)."
         )
 
-# ID администратора (ВАШ ID)
-ADMIN_ID = int(os.getenv("ADMIN_ID", "385450652"))
+# ID администратора — только из окружения, без персонального дефолта в коде.
+_admin_raw = os.getenv("ADMIN_ID", "").strip()
+if not _admin_raw:
+    raise ValueError("ADMIN_ID не найден в переменных окружения!")
+ADMIN_ID = int(_admin_raw)
 
-# FatSecret API
+# FatSecret API (интеграция отложена — поиск в боте скрыт)
 FATSECRET_CLIENT_ID = os.getenv("FATSECRET_CLIENT_ID")
 FATSECRET_CLIENT_SECRET = os.getenv("FATSECRET_CLIENT_SECRET")
-USE_FATSECRET = os.getenv("USE_FATSECRET", "false").lower() == "true"
+USE_FATSECRET = False
 
 # Список администраторов (для совместимости)
 ADMIN_IDS = [ADMIN_ID]

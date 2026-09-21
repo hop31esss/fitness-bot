@@ -6,10 +6,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date, timedelta
 import logging
 
-from config import FATSECRET_CLIENT_ID, FATSECRET_CLIENT_SECRET, USE_FATSECRET
-from services.fatsecret_service import FatSecretService
-from database.base import db
 from config import ADMIN_ID
+from database.base import db
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -471,6 +469,9 @@ async def show_category(callback: CallbackQuery):
 async def select_food_from_fatsecret(callback: CallbackQuery, state: FSMContext):
     """Выбор продукта из базы"""
     food = callback.data.split(":")[1]
+    if food not in FOOD_DATABASE:
+        await callback.answer("Продукт не найден", show_alert=True)
+        return
     
     await state.update_data(selected_food=food)
     
@@ -589,9 +590,11 @@ async def process_food_amount(message: Message, state: FSMContext):
         today = date.today().isoformat()
         
         if 'selected_food' in data:
-            # Из базы
             food = data['selected_food']
-            food_data = FOOD_DATABASE[food]
+            food_data = FOOD_DATABASE.get(food)
+            if not food_data:
+                await message.answer("❌ Продукт не найден в базе. Добавьте вручную.")
+                return
             multiplier = amount / 100
             
             calories = int(food_data['calories'] * multiplier)
@@ -671,114 +674,21 @@ async def calorie_history(callback: CallbackQuery):
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
-    await callback.answer()    
-
-if USE_FATSECRET:
-    from services.fatsecret_service import FatSecretService
-    fatsecret = FatSecretService(
-        client_id=FATSECRET_CLIENT_ID,
-        client_secret=FATSECRET_CLIENT_SECRET
-    )
-else:
-    # Заглушка
-    fatsecret = None
-
-# Временно отключаем FatSecret
-USE_FATSECRET = False
+    await callback.answer()
 
 
+# FatSecret отложен: поиск через внешний API скрыт до отдельного запуска.
 @router.callback_query(F.data == "search_food")
 async def search_food(callback: CallbackQuery, state: FSMContext):
+    await state.clear()
+    await callback.answer("Поиск FatSecret временно отключён", show_alert=True)
     await callback.message.edit_text(
-        "🔍 *Поиск продукта*\n\n"
-        "Введите название продукта (например: 'банан', 'куриная грудка'):"
+        "🔍 Поиск продуктов через FatSecret пока скрыт.\n\n"
+        "Добавьте еду из внутренней базы или вручную.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="📖 ИЗ БАЗЫ", callback_data="add_from_db"),
+            InlineKeyboardButton(text="✏️ ВРУЧНУЮ", callback_data="add_manual"),
+        ).row(
+            InlineKeyboardButton(text="↩️ НАЗАД", callback_data="calorie_tracker"),
+        ).as_markup(),
     )
-    await state.set_state(CalorieStates.waiting_search_query)
-    await callback.answer()
-
-@router.message(CalorieStates.waiting_search_query)
-async def process_food_search(message: Message, state: FSMContext):
-    query = message.text.strip()
-    
-    if len(query) < 2:
-        await message.answer("❌ Слишком короткий запрос. Введите минимум 2 символа.")
-        return
-    
-    await message.answer("🔍 Ищу продукты...")
-    
-    # Поиск через FatSecret API
-    foods = await fatsecret.search_foods(query)
-    
-    if not foods:
-        await message.answer(
-            "❌ Продукты не найдены.\n\n"
-            "Попробуйте другое название или добавьте продукт вручную.",
-            reply_markup=InlineKeyboardBuilder().row(
-                InlineKeyboardButton(text="✏️ ВРУЧНУЮ", callback_data="add_manual"),
-                InlineKeyboardButton(text="↩️ НАЗАД", callback_data="calorie_tracker")
-            ).as_markup()
-        )
-        return
-    
-    # Показываем результаты поиска
-    text = "🔍 *Результаты поиска:*\n\n"
-    builder = InlineKeyboardBuilder()
-    
-    for i, food in enumerate(foods[:10], 1):
-        name = food.get('food_name', 'Без названия')
-        brand = food.get('brand_name', '')
-        description = f"{brand} - {name}" if brand else name
-        text += f"{i}. {description}\n"
-        
-        builder.row(
-            InlineKeyboardButton(
-                text=f"{i}. {name[:20]}",
-                callback_data=f"select_food:{food.get('food_id')}"
-            )
-        )
-    
-    text += "\nВыберите продукт из списка или введите запрос заново:"
-    
-    builder.row(
-        InlineKeyboardButton(text="🔄 НОВЫЙ ПОИСК", callback_data="search_food"),
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="calorie_tracker")
-    )
-    
-    await message.answer(text, reply_markup=builder.as_markup())
-
-@router.callback_query(F.data.startswith("select_food:"))
-async def select_food(callback: CallbackQuery, state: FSMContext):
-    food_id = callback.data.split(":")[1]
-    
-    # Получаем детали продукта
-    food_data = await fatsecret.get_food_details(food_id)
-    
-    if not food_data:
-        await callback.answer("❌ Ошибка загрузки продукта", show_alert=True)
-        return
-    
-    nutrition = fatsecret.get_nutrition_data(food_data)
-    
-    await state.update_data(
-        selected_food=food_data.get('food_name'),
-        calories_per_100=nutrition['calories'],
-        protein_per_100=nutrition['protein'],
-        fat_per_100=nutrition['fat'],
-        carbs_per_100=nutrition['carbs']
-    )
-    
-    text = (
-        f"✅ *{food_data.get('food_name')}*\n\n"
-        f"📊 *Пищевая ценность на 100г:*\n"
-        f"⚡ Калории: {nutrition['calories']} ккал\n"
-        f"🍗 Белки: {nutrition['protein']} г\n"
-        f"🥑 Жиры: {nutrition['fat']} г\n"
-        f"🍚 Углеводы: {nutrition['carbs']} г\n"
-        f"🥬 Клетчатка: {nutrition['fiber']} г\n"
-        f"🍬 Сахар: {nutrition['sugar']} г\n\n"
-        f"Введите количество граммов:"
-    )
-    
-    await callback.message.edit_text(text)
-    await state.set_state(CalorieStates.waiting_food_amount)
-    await callback.answer()

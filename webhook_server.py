@@ -287,5 +287,12 @@ def health_stats(user_id):
 # ========== ЗАПУСК ==========
 
 if __name__ == '__main__':
-    logger.info("🚀 Вебхук-сервер запускается на порту 5000")
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    if os.getenv("APPLE_HEALTH_ENABLED", "false").lower() != "true":
+        raise SystemExit(
+            "Apple Health webhook отключён. "
+            "Для запуска задайте APPLE_HEALTH_ENABLED=true."
+        )
+    host = os.getenv("APPLE_HEALTH_HOST", "127.0.0.1")
+    port = int(os.getenv("APPLE_HEALTH_PORT", "5001"))
+    logger.info("Вебхук-сервер Apple Health: %s:%s", host, port)
+    app.run(host=host, port=port, debug=False)

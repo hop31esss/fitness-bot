@@ -109,6 +109,9 @@ async def add_friend_start(callback: CallbackQuery, state: FSMContext):
 @router.message(FriendStates.waiting_friend_username)
 async def process_friend_username(message: Message, state: FSMContext):
     """Обработка username для добавления в друзья"""
+    if not message.text:
+        await message.answer("❌ Пришлите username текстом или /cancel.")
+        return
     username = message.text.strip()
     
     if username == "/cancel":
@@ -141,7 +144,7 @@ async def process_friend_username(message: Message, state: FSMContext):
     
     # Проверяем, не друзья ли уже
     existing = await db.fetch_one(
-        """SELECT status FROM friends 
+        """SELECT user_id, friend_id, status FROM friends
         WHERE (user_id = ? AND friend_id = ?) OR (user_id = ? AND friend_id = ?)""",
         (user_id, friend_id, friend_id, user_id)
     )
