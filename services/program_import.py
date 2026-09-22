@@ -5,48 +5,35 @@ import json
 import re
 from typing import Any
 
-_LINE = re.compile(
-    r"""
-    ^\s*
-    (?:\d+[\.\)\:]\s*)?
-    (?P<name>[^0-9\n][^:\n]*?)
-    \s*[:\-–]?\s*
-    (?P<sets>\d{1,2})
-    \s*[xх×*]+\s*
-    (?P<reps>\d{1,3})
-    (?:\s*[-–/]\s*\d{1,3})?
-    (?:\s*(?:повт(?:орен(?:ий|ия))?|reps?))?
-    (?:\s*(?:@|по)?\s*(?P<weight>\d+(?:[.,]\d+)?)(?:\s*кг|kg)?)?
-    \s*$
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
-_ALT = re.compile(
-    r"""
-    ^\s*(?:\d+[\.\)\:]\s*)?
-    (?P<name>.+?)\s+
-    (?P<sets>\d{1,2})\s*(?:подход(?:а|ов)?|sets?)\s+
-    (?:по\s+)?(?P<reps>\d{1,3})
-    (?:\s*[-–/]\s*\d{1,3})?
-    (?:\s*(?:повт(?:орен(?:ий|ия))?|reps?))?
-    (?:\s*(?P<weight>\d+(?:[.,]\d+)?)(?:\s*кг|kg)?)?
-    \s*$
-    """,
-    re.IGNORECASE | re.VERBOSE,
-)
-
 _SKIP = re.compile(
     r"^(?:день|day|тренировка|разминка|заминка|warmup|cooldown)\b",
     re.IGNORECASE,
 )
+_BULLET = re.compile(r"^(?:[\s•·▪◦●\-–—*]+|\d+[\.\)\:]\s*)+")
+_STATS = re.compile(
+    r"(?P<sets>\d{1,2})\s*[xх×*]\s*(?P<reps>\d{1,3})"
+    r"(?:\s*[-–—/]\s*(?P<reps_max>\d{1,3}))?",
+    re.IGNORECASE,
+)
+_ALT_STATS = re.compile(
+    r"(?P<sets>\d{1,2})\s*(?:подход(?:а|ов)?|sets?)\s+"
+    r"(?:по\s+)?(?P<reps>\d{1,3})"
+    r"(?:\s*[-–—/]\s*(?P<reps_max>\d{1,3}))?",
+    re.IGNORECASE,
+)
+_WEIGHT = re.compile(
+    r"(?:по\s+)?(?P<weight>\d+(?:[.,]\d+)?)\s*(?:кг|kg)\b",
+    re.IGNORECASE,
+)
+_WEIGHT_BARE = re.compile(r"(?:@|по)?\s*(?P<weight>\d+(?:[.,]\d+)?)\s*$")
 
 
 def _clean_name(name: str) -> str:
-    return re.sub(r"\s+", " ", name).strip(" :-–—\t")
+    cleaned = _BULLET.sub("", str(name or ""))
+    return re.sub(r"\s+", " ", cleaned).strip(" :-–—\t•·▪◦●*")
 
 
-def _item(name: str, sets: Any, reps: Any, weight: Any) -> dict[str, Any] | None:
+def _item(name: str, sets: Any, reps: Any, weight: Any, reps_max: Any = None) -> dict[str, Any] | None:
     cleaned = _clean_name(str(name or ""))
     if not cleaned or len(cleaned) < 2:
         return None
@@ -63,13 +50,49 @@ def _item(name: str, sets: Any, reps: Any, weight: Any) -> dict[str, Any] | None
             parsed_weight = float(str(weight).replace(",", "."))
         except (TypeError, ValueError):
             parsed_weight = None
-    return {
+    item = {
         "name": cleaned[:80],
         "type": "strength",
         "sets": set_count,
         "reps": rep_count,
         "weight": parsed_weight,
     }
+    try:
+        max_reps = int(reps_max) if reps_max not in (None, "") else None
+    except (TypeError, ValueError):
+        max_reps = None
+    if max_reps and max_reps != rep_count:
+        item["reps_max"] = max_reps
+    return item
+
+
+def _weight_from(text: str) -> str | None:
+    match = _WEIGHT.search(text or "")
+    if match:
+        return match.group("weight")
+    match = _WEIGHT_BARE.search((text or "").strip())
+    return match.group("weight") if match else None
+
+
+def parse_program_line(line: str) -> dict[str, Any] | None:
+    stripped = (line or "").strip()
+    if not stripped or stripped.startswith(("#", "//")):
+        return None
+    if re.fullmatch(r"[-*=~_]{3,}", stripped) or _SKIP.match(_clean_name(stripped) or stripped):
+        return None
+    prepared = _BULLET.sub("", stripped).strip()
+    match = _STATS.search(prepared) or _ALT_STATS.search(prepared)
+    if not match:
+        return None
+    name = prepared[: match.start()]
+    rest = prepared[match.end() :]
+    return _item(
+        name,
+        match.group("sets"),
+        match.group("reps"),
+        _weight_from(rest) or _weight_from(prepared),
+        match.groupdict().get("reps_max"),
+    )
 
 
 def _from_json(text: str) -> list[dict[str, Any]]:
@@ -88,6 +111,7 @@ def _from_json(text: str) -> list[dict[str, Any]]:
             item.get("sets"),
             item.get("reps"),
             item.get("weight"),
+            item.get("reps_max"),
         )
         if parsed:
             exercises.append(parsed)
@@ -96,10 +120,10 @@ def _from_json(text: str) -> list[dict[str, Any]]:
 
 def suggested_program_name(text: str) -> str | None:
     for raw in (text or "").splitlines():
-        line = raw.strip().strip("#*")
+        line = _clean_name(raw)
         if not line:
             continue
-        if _LINE.match(line) or _ALT.match(line) or _SKIP.match(line):
+        if parse_program_line(raw) or _SKIP.match(line):
             continue
         if re.fullmatch(r"[-*=~_]{3,}", line):
             continue
@@ -121,20 +145,7 @@ def parse_program_text(text: str) -> list[dict[str, Any]]:
 
     exercises: list[dict[str, Any]] = []
     for line in raw.splitlines():
-        stripped = line.strip()
-        if not stripped or stripped.startswith(("#", "//")):
-            continue
-        if re.fullmatch(r"[-*=~_]{3,}", stripped) or _SKIP.match(stripped):
-            continue
-        match = _LINE.match(stripped) or _ALT.match(stripped)
-        if not match:
-            continue
-        parsed = _item(
-            match.group("name"),
-            match.group("sets"),
-            match.group("reps"),
-            match.groupdict().get("weight"),
-        )
+        parsed = parse_program_line(line)
         if parsed:
             exercises.append(parsed)
     return exercises
@@ -148,7 +159,14 @@ def format_template_exercises(exercises: list[dict[str, Any]]) -> str:
             continue
         weight = item.get("weight")
         weight_text = f"{weight:g} кг" if weight else "б/в"
+        reps = int(item.get("reps") or 0)
+        reps_max = item.get("reps_max")
+        try:
+            reps_max = int(reps_max) if reps_max not in (None, "") else None
+        except (TypeError, ValueError):
+            reps_max = None
+        reps_text = f"{reps}–{reps_max}" if reps_max and reps_max != reps else str(reps)
         lines.append(
-            f"{index}. {item.get('name')} — {int(item.get('sets') or 0)}×{int(item.get('reps') or 0)} ({weight_text})"
+            f"{index}. {item.get('name')} — {int(item.get('sets') or 0)}×{reps_text} ({weight_text})"
         )
     return "\n".join(lines)

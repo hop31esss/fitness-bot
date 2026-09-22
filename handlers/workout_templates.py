@@ -128,6 +128,23 @@ def _saved_template_markup():
         InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates"),
     ).as_markup()
 
+
+def _exit_wizard_markup(*extra_rows: list[InlineKeyboardButton]):
+    builder = InlineKeyboardBuilder()
+    for row in extra_rows:
+        builder.row(*row)
+    builder.row(InlineKeyboardButton(text="↩️ ВЫЙТИ", callback_data="template_wizard_cancel"))
+    return builder.as_markup()
+
+
+def _import_preview_markup():
+    return _exit_wizard_markup(
+        [
+            InlineKeyboardButton(text="💾 СОХРАНИТЬ", callback_data="template_import_save"),
+            InlineKeyboardButton(text="📥 ВСТАВИТЬ ЗАНОВО", callback_data="template_import_paste"),
+        ]
+    )
+
 # ========== ГЛАВНОЕ МЕНЮ ШАБЛОНОВ ==========
 
 @router.callback_query(F.data == "templates")
@@ -205,7 +222,8 @@ async def create_template_from_current(callback: CallbackQuery, state: FSMContex
     await state.update_data(template_source_exercises=exercises)
     await callback.message.edit_text(
         "📝 *Назовите программу*\n\n"
-        "Например: «Тяжёлая неделя», «Грудь‑трицепс», «Ноги‑плечи»"
+        "Например: «Тяжёлая неделя», «Грудь‑трицепс», «Ноги‑плечи»",
+        reply_markup=_exit_wizard_markup(),
     )
     await state.set_state(TemplateStates.waiting_name)
     await callback.answer()
@@ -223,6 +241,9 @@ async def save_template_name(message: Message, state: FSMContext):
         )
         builder.row(
             InlineKeyboardButton(text="✅ СОХРАНИТЬ ПРОГРАММУ", callback_data="template_manual_save")
+        )
+        builder.row(
+            InlineKeyboardButton(text="↩️ ВЫЙТИ", callback_data="template_wizard_cancel")
         )
         await message.answer(
             f"🧩 Программа «{name}» создана. Теперь добавьте упражнения.",
@@ -288,7 +309,10 @@ async def template_history_pick(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ В этой тренировке нет упражнений", show_alert=True)
         return
     await state.update_data(template_source_exercises=exercises)
-    await callback.message.edit_text("📝 Введите название новой программы из истории:")
+    await callback.message.edit_text(
+        "📝 Введите название новой программы из истории:",
+        reply_markup=_exit_wizard_markup(),
+    )
     await state.set_state(TemplateStates.waiting_name)
     await callback.answer()
 
@@ -296,14 +320,20 @@ async def template_history_pick(callback: CallbackQuery, state: FSMContext):
 @router.callback_query(F.data == "template_create_manual")
 async def template_create_manual(callback: CallbackQuery, state: FSMContext):
     await state.update_data(manual_exercises=[])
-    await callback.message.edit_text("📝 Введите название программы:")
+    await callback.message.edit_text(
+        "📝 Введите название программы:",
+        reply_markup=_exit_wizard_markup(),
+    )
     await state.set_state(TemplateStates.waiting_name)
     await callback.answer()
 
 
 @router.callback_query(F.data == "template_manual_add_exercise")
 async def template_manual_add_exercise(callback: CallbackQuery, state: FSMContext):
-    await callback.message.edit_text("🏋️ Введите название упражнения:")
+    await callback.message.edit_text(
+        "🏋️ Введите название упражнения:",
+        reply_markup=_exit_wizard_markup(),
+    )
     await state.set_state(TemplateStates.waiting_manual_exercise_name)
     await callback.answer()
 
@@ -311,7 +341,7 @@ async def template_manual_add_exercise(callback: CallbackQuery, state: FSMContex
 @router.message(TemplateStates.waiting_manual_exercise_name)
 async def template_manual_exercise_name(message: Message, state: FSMContext):
     await state.update_data(manual_current_name=message.text.strip())
-    await message.answer("Введите количество подходов:")
+    await message.answer("Введите количество подходов:", reply_markup=_exit_wizard_markup())
     await state.set_state(TemplateStates.waiting_manual_sets)
 
 
@@ -325,7 +355,7 @@ async def template_manual_sets(message: Message, state: FSMContext):
         await message.answer("❌ Введите положительное число подходов")
         return
     await state.update_data(manual_current_sets=sets)
-    await message.answer("Введите количество повторений:")
+    await message.answer("Введите количество повторений:", reply_markup=_exit_wizard_markup())
     await state.set_state(TemplateStates.waiting_manual_reps)
 
 
@@ -339,7 +369,7 @@ async def template_manual_reps(message: Message, state: FSMContext):
         await message.answer("❌ Введите положительное число повторений")
         return
     await state.update_data(manual_current_reps=reps)
-    await message.answer("Введите вес (кг) или '-' если без веса:")
+    await message.answer("Введите вес (кг) или '-' если без веса:", reply_markup=_exit_wizard_markup())
     await state.set_state(TemplateStates.waiting_manual_weight)
 
 
@@ -370,6 +400,9 @@ async def template_manual_weight(message: Message, state: FSMContext):
     builder.row(
         InlineKeyboardButton(text="➕ ЕЩЁ УПРАЖНЕНИЕ", callback_data="template_manual_add_exercise"),
         InlineKeyboardButton(text="✅ СОХРАНИТЬ ПРОГРАММУ", callback_data="template_manual_save")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ ВЫЙТИ", callback_data="template_wizard_cancel")
     )
     await message.answer(
         f"✅ Добавлено. Упражнений в программе: {len(exercises)}",
@@ -1035,16 +1068,36 @@ async def template_open(callback: CallbackQuery):
     await callback.answer()
 
 
+@router.callback_query(F.data == "template_wizard_cancel")
+async def template_wizard_cancel(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    if data.get("session_id"):
+        for key in (
+            "import_exercises",
+            "pending_template_name",
+            "manual_exercises",
+            "manual_template_name",
+            "template_source_exercises",
+        ):
+            data.pop(key, None)
+        await state.set_data(data)
+        await state.set_state(None)
+    else:
+        await state.clear()
+    await templates_menu(callback)
+
+
 @router.callback_query(F.data == "template_import_paste")
 async def template_import_paste(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "📥 *Вставьте программу текстом*\n\n"
         "Скопируйте из заметок или с сайта и отправьте одним сообщением.\n\n"
         "Примеры строк:\n"
+        "`• Жим лёжа — 3×6–10 (80кг)`\n"
         "`Присед 4x8 100`\n"
-        "`Румынская тяга 3×10`\n"
         "`Разгибание ног — 4 подхода по 12`\n\n"
-        "Строки без подходов бот пропустит."
+        "Можно писать диапазон повторений и вес в скобках.",
+        reply_markup=_exit_wizard_markup(),
     )
     await state.set_state(TemplateImportStates.waiting_paste)
     await callback.answer()
@@ -1053,13 +1106,16 @@ async def template_import_paste(callback: CallbackQuery, state: FSMContext):
 @router.message(TemplateImportStates.waiting_paste)
 async def template_import_parse(message: Message, state: FSMContext):
     if not message.text:
-        await message.answer("❌ Пришлите программу текстом.")
+        await message.answer("❌ Пришлите программу текстом.", reply_markup=_exit_wizard_markup())
         return
     exercises = parse_program_text(message.text)
     if not exercises:
         await message.answer(
             "❌ Не удалось разобрать упражнения.\n"
-            "Каждая строка должна быть вида «Присед 4x8 100»."
+            "Пример: «• Жим лёжа — 3×6–10 (80кг)»",
+            reply_markup=_exit_wizard_markup(
+                [InlineKeyboardButton(text="📥 ВСТАВИТЬ ЗАНОВО", callback_data="template_import_paste")]
+            ),
         )
         return
     suggested = suggested_program_name(message.text) or "Моя программа"
@@ -1069,9 +1125,7 @@ async def template_import_parse(message: Message, state: FSMContext):
         f"{format_template_exercises(exercises)}\n\n"
         f"Название: «{suggested}».\n"
         "Отправьте другое название или нажмите сохранить.",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="💾 СОХРАНИТЬ", callback_data="template_import_save")
-        ).as_markup(),
+        reply_markup=_import_preview_markup(),
     )
     await state.set_state(TemplateImportStates.waiting_import_name)
 
@@ -1130,7 +1184,8 @@ async def template_ai_create(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
         "🤖 *Создание программы с ИИ*\n\n"
         "Напишите, какая программа нужна. Например:\n"
-        "«3 дня в зале, набор массы, средний уровень, есть штанга и тренажёры, 60 минут»."
+        "«3 дня в зале, набор массы, средний уровень, есть штанга и тренажёры, 60 минут».",
+        reply_markup=_exit_wizard_markup(),
     )
     await state.set_state(TemplateImportStates.waiting_ai_prompt)
     await callback.answer()
@@ -1163,8 +1218,6 @@ async def template_ai_generate(message: Message, state: FSMContext):
         f"🤖 *Черновик программы «{name}»*\n\n"
         f"{format_template_exercises(exercises)}\n\n"
         "Можно сохранить как есть или прислать другое название.",
-        reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="💾 СОХРАНИТЬ", callback_data="template_import_save")
-        ).as_markup(),
+        reply_markup=_import_preview_markup(),
     )
     await state.set_state(TemplateImportStates.waiting_import_name)

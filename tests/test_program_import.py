@@ -60,3 +60,34 @@ def test_time_normalization():
     assert normalize_hhmm("9:5") == "09:05"
     assert same_hhmm("9:00", "09:00")
     assert not same_hhmm("18:00", "18:01")
+
+
+def test_parse_notes_style_with_ranges_and_parentheses():
+    text = """
+    Пн
+
+    • Жим лёжа — 3×6–10 (80кг)
+    • Наклонный жим — 3×8–12 (по 35кг с каждой стороны)
+    • Разведения — 3×12–15
+    • Жим плечами — 3×8–12
+    • Разведения в стороны — 3×12–20
+    • Трицепс — 3×10–15
+    """
+    exercises = parse_program_text(text)
+    assert [item["name"] for item in exercises] == [
+        "Жим лёжа",
+        "Наклонный жим",
+        "Разведения",
+        "Жим плечами",
+        "Разведения в стороны",
+        "Трицепс",
+    ]
+    assert exercises[0]["sets"] == 3
+    assert exercises[0]["reps"] == 6
+    assert exercises[0]["reps_max"] == 10
+    assert exercises[0]["weight"] == 80
+    assert exercises[1]["weight"] == 35
+    assert suggested_program_name(text) == "Пн"
+    rendered = format_template_exercises(exercises)
+    assert "Жим лёжа — 3×6–10 (80 кг)" in rendered
+    assert "Наклонный жим — 3×8–12 (35 кг)" in rendered
