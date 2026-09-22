@@ -125,6 +125,8 @@ async def notify_achievement(bot: Bot, user_id: int, achievement_name: str):
             f"Продолжайте в том же духе! 💪"
         )
         await bot.send_message(user_id, message, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Не удалось отправить уведомление об ачивке {user_id}: {e}")
 
 
 async def send_weekly_stats(bot: Bot):
