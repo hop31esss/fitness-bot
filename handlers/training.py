@@ -3,9 +3,12 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from datetime import date
 
 from database.base import db
 from utils.logging import log_action
+from utils.units import to_kg
+from services.progress_analytics import fetch_session_history, format_kg
 
 router = Router()
 
@@ -35,7 +38,7 @@ async def training_journal(callback: CallbackQuery):
         InlineKeyboardButton(text="📝 ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_exercise")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_training")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -163,6 +166,9 @@ async def add_workout_start(callback: CallbackQuery, state: FSMContext):
 async def process_exercise(message: Message, state: FSMContext):
     """Обработка упражнения"""
     log_action(message.from_user.id, "process_exercise")
+    if not message.text:
+        await message.answer("❌ Пришлите название упражнения текстом.")
+        return
     exercise = message.text.strip()
     await state.update_data(exercise=exercise)
     
@@ -173,8 +179,13 @@ async def process_exercise(message: Message, state: FSMContext):
 async def process_sets(message: Message, state: FSMContext):
     """Обработка подходов"""
     log_action(message.from_user.id, "process_sets")
+    if not message.text:
+        await message.answer("❌ Введите положительное целое число.")
+        return
     try:
         sets = int(message.text)
+        if sets <= 0:
+            raise ValueError
         await state.update_data(sets=sets)
         await message.answer("Введите количество повторений:")
         await state.set_state(WorkoutStates.waiting_reps)
@@ -185,8 +196,13 @@ async def process_sets(message: Message, state: FSMContext):
 async def process_reps(message: Message, state: FSMContext):
     """Обработка повторений"""
     log_action(message.from_user.id, "process_reps")
+    if not message.text:
+        await message.answer("❌ Введите положительное целое число.")
+        return
     try:
         reps = int(message.text)
+        if reps <= 0:
+            raise ValueError
         await state.update_data(reps=reps)
         await message.answer("Введите вес (кг) или '-'")
         await state.set_state(WorkoutStates.waiting_weight)
@@ -197,18 +213,51 @@ async def process_reps(message: Message, state: FSMContext):
 async def process_weight(message: Message, state: FSMContext):
     """Обработка веса"""
     log_action(message.from_user.id, "process_weight")
-    weight = None if message.text == '-' else float(message.text)
+    if not message.text:
+        await message.answer("❌ Введите вес или '-' для упражнения без веса.")
+        return
+    try:
+        weight = 0.0 if message.text.strip() == '-' else float(message.text.replace(",", "."))
+        if weight < 0:
+            raise ValueError
+    except ValueError:
+        await message.answer("❌ Введите неотрицательный вес или '-'.")
+        return
     
     data = await state.get_data()
     user_id = message.from_user.id
+    settings = await db.fetch_one(
+        "SELECT units FROM user_settings WHERE user_id = ?",
+        (user_id,),
+    )
+    weight = to_kg(weight, (settings or {}).get("units", "kg"))
     
-    # Сохраняем в старую таблицу workouts
+    # Ручной ввод также пишет в каноническую модель сессий и подходов.
+    today = date.today().isoformat()
     await db.execute(
-        "INSERT INTO workouts (user_id, exercise_name, sets, reps, weight) VALUES (?, ?, ?, ?, ?)",
-        (user_id, data['exercise'], data['sets'], data['reps'], weight)
+        """INSERT INTO workout_sessions (user_id, date, start_time, end_time)
+           VALUES (?, ?, time('now', 'localtime'), time('now', 'localtime'))""",
+        (user_id, today),
+    )
+    session = await db.fetch_one("SELECT last_insert_rowid() AS id")
+    await db.execute(
+        """INSERT INTO workout_exercises
+           (session_id, exercise_name, exercise_type, sets, reps, weight, completed, order_num)
+           VALUES (?, ?, 'strength', ?, ?, ?, TRUE, 1)""",
+        (session["id"], data["exercise"], data["sets"], data["reps"], weight),
+    )
+    exercise_row = await db.fetch_one("SELECT last_insert_rowid() AS id")
+    await db.execute_many(
+        """INSERT INTO workout_sets
+           (workout_exercise_id, set_number, weight, reps, completed)
+           VALUES (?, ?, ?, ?, TRUE)""",
+        [
+            (exercise_row["id"], set_number, weight, data["reps"])
+            for set_number in range(1, data["sets"] + 1)
+        ],
     )
     
-    weight_text = f"{weight} кг" if weight else "без веса"
+    weight_text = f"{weight:g} кг" if weight else "без веса"
     
     await message.answer(
         f"✅ *Тренировка добавлена!*\n\n"
@@ -226,23 +275,14 @@ async def workout_history(callback: CallbackQuery):
     log_action(callback.from_user.id, "workout_history_open")
     user_id = callback.from_user.id
     
-    # Показываем сессии с упражнениями
-    sessions = await db.fetch_all("""
-        SELECT ws.id, ws.date, ws.start_time,
-               GROUP_CONCAT(we.exercise_name || ' ' || we.sets || '×' || we.reps, '\n') as exercises
-        FROM workout_sessions ws
-        LEFT JOIN workout_exercises we ON ws.id = we.session_id
-        WHERE ws.user_id = ?
-        GROUP BY ws.id
-        ORDER BY ws.date DESC, ws.start_time DESC
-        LIMIT 10
-    """, (user_id,))
+    sessions = await fetch_session_history(user_id, limit=10)
 
     if sessions:
         text = "📋 *История тренировок*\n\n"
         for s in sessions:
             text += f"📅 {s['date']} {s['start_time'] or ''}\n"
-            text += f"{s['exercises']}\n\n"
+            text += f"{s['exercises'] or 'нет упражнений'}\n"
+            text += f"⚖️ Объём: {format_kg(s['volume'] or 0)} кг\n\n"
     else:
         text = "📋 *История тренировок*\n\nПока нет тренировок"
     

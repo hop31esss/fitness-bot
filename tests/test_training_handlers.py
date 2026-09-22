@@ -128,7 +128,15 @@ async def test_process_weight_saves_workout(monkeypatch):
     async def fake_execute(query, params):
         calls.append((query, params))
 
+    async def fake_fetch_one(query, params=()):
+        return {"id": 11}
+
+    async def fake_execute_many(query, params):
+        calls.append((query, params))
+
     monkeypatch.setattr(training_handlers.db, "execute", fake_execute)
+    monkeypatch.setattr(training_handlers.db, "fetch_one", fake_fetch_one)
+    monkeypatch.setattr(training_handlers.db, "execute_many", fake_execute_many)
 
     state = FakeState()
     await state.update_data(exercise="Жим", sets=3, reps=10)
@@ -136,8 +144,7 @@ async def test_process_weight_saves_workout(monkeypatch):
 
     await training_handlers.process_weight(message, state)
 
-    assert calls
-    assert calls[0][1][0] == 77
+    assert any(params and params[0] == 77 for _, params in calls if params)
     assert state.state is None
     message.answer.assert_awaited_once()
 

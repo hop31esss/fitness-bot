@@ -154,7 +154,7 @@ def get_leaderboard_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="👥 Среди друзей", callback_data="friends_leaderboard")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ Назад", callback_data="menu_progress")
     )
     
     return builder.as_markup()

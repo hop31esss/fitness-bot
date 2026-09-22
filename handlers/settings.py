@@ -15,6 +15,9 @@ router = Router()
 class NotificationStates(StatesGroup):
     waiting_notification_time = State()
 
+class WeeklyGoalStates(StatesGroup):
+    waiting_weekly_goal = State()
+
 @router.callback_query(F.data == "settings")
 async def settings_menu(callback: CallbackQuery):
     """Меню настроек"""
@@ -23,7 +26,7 @@ async def settings_menu(callback: CallbackQuery):
     
     # Получаем текущие настройки пользователя
     user_settings = await db.fetch_one(
-        """SELECT units, notifications_enabled, notification_time 
+        """SELECT units, notifications_enabled, notification_time, weekly_workout_goal
         FROM user_settings WHERE user_id = ?""",
         (user_id,)
     )
@@ -35,11 +38,17 @@ async def settings_menu(callback: CallbackQuery):
             VALUES (?, ?, ?)""",
             (user_id, 'kg', False)
         )
-        user_settings = {'units': 'kg', 'notifications_enabled': False, 'notification_time': '18:00'}
+        user_settings = {
+            'units': 'kg',
+            'notifications_enabled': False,
+            'notification_time': '18:00',
+            'weekly_workout_goal': 3,
+        }
     
     text = "⚙️ *Настройки*\n\n"
     text += f"📏 Единицы измерения: {'кг' if user_settings['units'] == 'kg' else 'фунты'}\n"
     text += f"🔔 Уведомления: {'ВКЛ' if user_settings['notifications_enabled'] else 'ВЫКЛ'}\n"
+    text += f"🎯 Цель: {user_settings['weekly_workout_goal'] or 3} тренировки в неделю\n"
     if user_settings['notifications_enabled']:
         text += f"⏰ Время уведомлений: {user_settings['notification_time'] or '18:00'}\n"
     
@@ -51,6 +60,7 @@ async def settings_menu(callback: CallbackQuery):
     InlineKeyboardButton(text="🔔 Уведомления", callback_data="settings_notifications")
 )
     builder.row(
+        InlineKeyboardButton(text="🎯 Недельная цель", callback_data="weekly_goal"),
         InlineKeyboardButton(text="📤 Экспорт данных", callback_data="settings_export"),
     )
     builder.row(
@@ -59,11 +69,61 @@ async def settings_menu(callback: CallbackQuery):
     )
     builder.row(
         InlineKeyboardButton(text="📊 Статистика", callback_data="stats"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В профиль", callback_data="menu_profile")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
+
+@router.callback_query(F.data == "weekly_goal")
+async def weekly_goal(callback: CallbackQuery, state: FSMContext):
+    """Настройка планового количества тренировок в неделю."""
+    row = await db.fetch_one(
+        "SELECT weekly_workout_goal FROM user_settings WHERE user_id = ?",
+        (callback.from_user.id,),
+    )
+    current = int(row["weekly_workout_goal"] or 3) if row else 3
+    await callback.message.edit_text(
+        "🎯 *Недельная цель*\n\n"
+        f"Сейчас: *{current}* тренировки в неделю.\n"
+        "Введите новое значение от 1 до 14.\n\n"
+        "По этой цели рассчитывается выполнение плана в разделе «Прогресс».",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="↩️ Назад", callback_data="menu_profile")
+        ).as_markup(),
+    )
+    await state.set_state(WeeklyGoalStates.waiting_weekly_goal)
+    await callback.answer()
+
+@router.message(WeeklyGoalStates.waiting_weekly_goal)
+async def process_weekly_goal(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("Введите целое число от 1 до 14 или /cancel.")
+        return
+    try:
+        goal = int(message.text.strip())
+        if not 1 <= goal <= 14:
+            raise ValueError
+    except ValueError:
+        await message.answer("Цель должна быть целым числом от 1 до 14.")
+        return
+
+    await db.execute(
+        """INSERT INTO user_settings (user_id, weekly_workout_goal)
+           VALUES (?, ?)
+           ON CONFLICT(user_id) DO UPDATE SET
+             weekly_workout_goal = excluded.weekly_workout_goal,
+             updated_at = CURRENT_TIMESTAMP""",
+        (message.from_user.id, goal),
+    )
+    await state.clear()
+    await message.answer(
+        f"✅ Недельная цель сохранена: {goal}.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
+            InlineKeyboardButton(text="📊 Прогресс", callback_data="progress_stats"),
+        ).as_markup(),
+    )
 
 @router.callback_query(F.data == "settings_units")
 async def settings_units(callback: CallbackQuery):
@@ -418,7 +478,7 @@ async def suggest_idea(callback: CallbackQuery):
     )
     builder.row(
         InlineKeyboardButton(text="↩️ Назад", callback_data="settings_about"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В профиль", callback_data="menu_profile")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -447,7 +507,7 @@ async def other_projects(callback: CallbackQuery):
     )
     builder.row(
         InlineKeyboardButton(text="↩️ Назад", callback_data="suggest_idea"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В профиль", callback_data="menu_profile")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
@@ -541,6 +601,6 @@ def get_back_to_settings_keyboard():
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="⚙️ Настройки", callback_data="settings"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В профиль", callback_data="menu_profile")
     )
     return builder.as_markup()

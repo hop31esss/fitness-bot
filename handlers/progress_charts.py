@@ -11,6 +11,7 @@ import logging
 from database.base import db
 from handlers.subscription import has_premium_access
 from services.premium_triggers import build_open_pro_markup
+from services.progress_analytics import EXERCISE_VOLUME_SQL
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -68,10 +69,10 @@ async def chart_total(callback: CallbackQuery):
 
     try:
         # Получаем данные из новой системы workout_sessions
-        workouts = await db.fetch_all("""
+        workouts = await db.fetch_all(f"""
             SELECT 
                 ws.date,
-                SUM(we.sets * we.reps * COALESCE(we.weight, 1)) as volume,
+                COALESCE(SUM({EXERCISE_VOLUME_SQL}), 0) as volume,
                 COUNT(we.id) as exercise_count
             FROM workout_sessions ws
             LEFT JOIN workout_exercises we ON ws.id = we.session_id
@@ -283,7 +284,15 @@ async def chart_weights(callback: CallbackQuery):
         max_weights = await db.fetch_all("""
             SELECT 
                 we.exercise_name,
-                MAX(we.weight) as max_weight
+                MAX(
+                    CASE WHEN EXISTS (
+                        SELECT 1 FROM workout_sets s
+                        WHERE s.workout_exercise_id = we.id AND s.completed = 1
+                    ) THEN (
+                        SELECT MAX(s.weight) FROM workout_sets s
+                        WHERE s.workout_exercise_id = we.id AND s.completed = 1
+                    ) ELSE we.weight END
+                ) as max_weight
             FROM workout_exercises we
             JOIN workout_sessions ws ON we.session_id = ws.id
             WHERE ws.user_id = ? AND we.weight IS NOT NULL

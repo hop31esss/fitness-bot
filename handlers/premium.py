@@ -1,140 +1,118 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+"""Premium info, paywalls, and CTA into the existing payment flow."""
+
+from aiogram import F, Router
 from aiogram.filters import Command
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+
+from services.premium_access import has_premium_access
 
 router = Router()
 
-# ID администратора - ОН ИМЕЕТ ДОСТУП КО ВСЕМУ
-ADMIN_ID = 385450652  # ВАШ ID
+PREMIUM_FEATURES = (
+    "Динамика силы и расчётный 1ПМ",
+    "Распределение нагрузки по мышцам",
+    "Личные рекорды и сравнение периодов",
+    "Подробная статистика за 7/30/90 дней",
+    "AI-разбор прогресса",
+    "Трекер калорий и экспорт данных",
+)
 
-# Список ID, у которых есть премиум-доступ (друзья)
-PREMIUM_USERS = [
-    # Добавляйте сюда ID друзей
-    # 123456789,  # Пример
-]
 
-# ================ ПРОВЕРКА ДОСТУПА ================
+def premium_cta_markup(back_callback: str = "menu_profile") -> object:
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👑 Оформить Premium", callback_data="payment"))
+    builder.row(InlineKeyboardButton(text="↩️ Назад", callback_data=back_callback))
+    return builder.as_markup()
 
-def has_premium_access(user_id: int) -> bool:
-    """Проверка доступа к премиум-функциям"""
-    # Админ имеет доступ всегда
-    if user_id == ADMIN_ID:
-        return True
-    
-    # Друзья из списка имеют доступ
-    if user_id in PREMIUM_USERS:
-        return True
-    
-    # Остальные не имеют доступа
-    return False
 
-# ================ МЕНЮ ПРЕМИУМ ================
+def build_teaser_paywall(title: str, visible_lines: list[str], extra: list[str] | None = None) -> str:
+    blocks = [title, "", *visible_lines, "", "────────────────", "", "💎 *В PREMIUM:*"]
+    for item in extra or PREMIUM_FEATURES:
+        blocks.append(f"• {item}")
+    return "\n".join(blocks)
+
+
+async def build_premium_screen(user_id: int) -> tuple[str, object]:
+    if await has_premium_access(user_id):
+        text = (
+            "👑 *Premium активен*\n\n"
+            "Доступны углублённые разделы внутри Прогресса и AI-советов:\n"
+            "• сила, объём, мышцы, регулярность, рекорды\n"
+            "• AI-анализ на основе ваших цифр\n"
+            "• калькулятор 1ПМ, калории, друзья и экспорт\n\n"
+            "Новых кнопок в главном меню нет — Premium открывает глубину."
+        )
+        builder = InlineKeyboardBuilder()
+        builder.row(
+            InlineKeyboardButton(text="📊 Прогресс", callback_data="progress_stats"),
+            InlineKeyboardButton(text="🤖 AI-советы", callback_data="ai_advice"),
+        )
+        builder.row(
+            InlineKeyboardButton(text="🏋️ 1ПМ", callback_data="one_rep_max"),
+            InlineKeyboardButton(text="🔥 Калории", callback_data="calorie_tracker"),
+        )
+        builder.row(
+            InlineKeyboardButton(text="⭐ Функции", callback_data="premium_features"),
+            InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile"),
+        )
+        return text, builder.as_markup()
+
+    text = (
+        "👑 *Premium*\n\n"
+        "Базовый прогресс уже доступен. Premium делает разбор глубже:\n\n"
+        + "\n".join(f"• {item}" for item in PREMIUM_FEATURES)
+        + "\n\nОплата картой РФ или Telegram Stars — без переписки с администратором."
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="👑 Оформить Premium", callback_data="payment"))
+    builder.row(
+        InlineKeyboardButton(text="⭐ Что входит", callback_data="premium_features"),
+        InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile"),
+    )
+    return text, builder.as_markup()
+
 
 @router.callback_query(F.data == "show_premium_info")
 async def show_premium_info(callback: CallbackQuery):
-    """Показать информацию о премиум-подписке"""
-    user_id = callback.from_user.id
-    
-    if has_premium_access(user_id):
-        # Для админа и друзей
-        text = (
-            "👑 *Премиум доступ*\n\n"
-            "✅ У вас есть доступ ко всем премиум-функциям!\n\n"
-            "*Доступные функции:*\n"
-            "• 🏋️ Калькулятор 1ПМ\n"
-            "• 🔥 Трекер калорий\n"
-            "• 👥 Друзья и челленджи\n"
-            "• 📊 Расширенная статистика\n"
-            "• 📤 Экспорт данных\n\n"
-            "Наслаждайтесь! 💪"
-        )
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="🏋️ 1ПМ", callback_data="one_rep_max"),
-            InlineKeyboardButton(text="🔥 Калории", callback_data="calorie_tracker")
-        )
-        builder.row(
-            InlineKeyboardButton(text="👥 Друзья", callback_data="friends_menu"),
-            InlineKeyboardButton(text="↩️ В меню", callback_data="back_to_main")
-        )
-        
-    else:
-        # Для обычных пользователей
-        text = (
-            "👑 *Премиум подписка*\n\n"
-            "Получите доступ к расширенным функциям:\n\n"
-            "✨ *Премиум-функции:*\n"
-            "• 🏋️ **Калькулятор 1ПМ**\n"
-            "• 🔥 **Трекер калорий**\n"
-            "• 👥 **Друзья и челленджи**\n"
-            "• 📊 **Расширенная статистика**\n"
-            "• 📤 **Экспорт данных**\n\n"
-            "💰 *Стоимость:* 150₽/месяц или 120 ⭐\n\n"
-            "Для покупки напишите администратору: @hop31esss"
-        )
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="✉️ Написать админу", url="https://t.me/hop31esss"),
-            InlineKeyboardButton(text="↩️ В меню", callback_data="back_to_main")
-        )
-    
-    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    text, markup = await build_premium_screen(callback.from_user.id)
+    await callback.message.edit_text(text, reply_markup=markup)
     await callback.answer()
+
 
 @router.callback_query(F.data == "premium_features")
 async def premium_features_menu(callback: CallbackQuery):
-    """Меню премиум-функций"""
+    premium = await has_premium_access(callback.from_user.id)
     text = (
-        "⭐ *ПРЕМИУМ ФУНКЦИИ*\n\n"
-        "✨ *Что доступно:*\n\n"
-        "▫️ 🏋️ *1ПМ Калькулятор* - максимумы с историей\n"
-        "▫️ 🔥 *Трекер калорий* - база продуктов\n"
-        "▫️ 👥 *Друзья* - соревнуйтесь и мотивируйте\n"
-        "▫️ 🤖 *AI-советы* - персональные рекомендации\n"
-        "▫️ 📊 *Расширенная статистика* - графики\n"
-        "▫️ 📤 *Экспорт данных* - в Excel/CSV\n\n"
-        "👇 *Выберите функцию:*"
+        "⭐ *Premium-функции*\n\n"
+        "Они открываются внутри существующих разделов:\n\n"
+        "▫️ *Прогресс* — 5 блоков аналитики и AI-разбор\n"
+        "▫️ *1ПМ* — расчёт и отслеживание силы\n"
+        "▫️ *Калории* — нормы и дневник еды\n"
+        "▫️ *Друзья / челленджи*\n"
+        "▫️ *Экспорт* данных\n"
     )
-    
     builder = InlineKeyboardBuilder()
-    
     builder.row(
+        InlineKeyboardButton(text="📊 Статистика", callback_data="advanced_stats"),
         InlineKeyboardButton(text="🏋️ 1ПМ", callback_data="one_rep_max"),
-        InlineKeyboardButton(text="🔥 КАЛОРИИ", callback_data="calorie_tracker")
     )
-    
     builder.row(
-        InlineKeyboardButton(text="👥 ДРУЗЬЯ", callback_data="friends_menu"),
-        InlineKeyboardButton(text="🤖 AI-СОВЕТЫ", callback_data="ai_advice")
+        InlineKeyboardButton(text="🔥 Калории", callback_data="calorie_tracker"),
+        InlineKeyboardButton(text="👥 Друзья", callback_data="friends_menu"),
     )
-    
     builder.row(
-        InlineKeyboardButton(text="📊 РАСШ. СТАТИСТИКА", callback_data="advanced_stats"),
-        InlineKeyboardButton(text="📤 ЭКСПОРТ", callback_data="export_data")
+        InlineKeyboardButton(text="🤖 AI-советы", callback_data="ai_advice"),
+        InlineKeyboardButton(text="📤 Экспорт", callback_data="export_data"),
     )
-    
-    builder.row(
-        InlineKeyboardButton(text="◀️ НАЗАД", callback_data="back_to_main")
-    )
-    
-    await callback.message.edit_text(
-        caption=text,
-        reply_markup=builder.as_markup()
-    )
-    await callback.answer()    
+    if not premium:
+        builder.row(InlineKeyboardButton(text="👑 Оформить Premium", callback_data="payment"))
+    builder.row(InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile"))
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
 
 @router.message(Command("premium"))
 async def cmd_premium(message: Message):
-    """Команда для вызова премиум-меню"""
-    # Создаем фиктивный callback
-    class FakeCallback:
-        def __init__(self, message):
-            self.message = message
-            self.from_user = message.from_user
-            self.answer = lambda x: None
-    
-    fake_callback = FakeCallback(message)
-    await show_premium_info(fake_callback)
+    text, markup = await build_premium_screen(message.from_user.id)
+    await message.answer(text, reply_markup=markup)

@@ -1,12 +1,42 @@
 import os
+import json
 import logging
 from typing import List, Tuple, Optional
 
 import aiosqlite
 
 from config import DATABASE_URL
+from database.exercise_catalog import EXERCISE_MUSCLE_CATALOG
 
 logger = logging.getLogger(__name__)
+
+MUSCLE_CATALOG = (
+    ("chest", "Грудь", ("грудные", "грудь", "chest", "pecs", "pectorals")),
+    ("back", "Спина", ("спина", "широчайшие", "трапеции", "back", "lats", "traps")),
+    ("shoulders", "Плечи", ("плечи", "дельты", "дельтовидные", "shoulders", "delts")),
+    ("biceps", "Бицепс", ("бицепс", "biceps", "bicep")),
+    ("triceps", "Трицепс", ("трицепс", "triceps", "tricep")),
+    ("forearms", "Предплечья", ("предплечья", "предплечье", "forearms", "forearm")),
+    ("quadriceps", "Квадрицепс", ("квадрицепс", "квадрицепсы", "quadriceps", "quads")),
+    ("hamstrings", "Бицепс бедра", ("бицепс бедра", "задняя поверхность бедра", "hamstrings")),
+    ("glutes", "Ягодицы", ("ягодицы", "ягодичные", "glutes", "gluteus")),
+    ("calves", "Икры", ("икры", "икроножные", "calves", "calf")),
+    ("core", "Кор", ("кор", "пресс", "мышцы кора", "core", "abs", "abdominals")),
+    ("undefined", "Не определено", ("не определено", "другое", "unknown", "undefined", "other")),
+)
+
+
+def canonical_muscle_slug(value: str) -> str:
+    """Resolve common Russian/English muscle aliases to a stable slug."""
+    normalized = " ".join((value or "").strip().casefold().replace("ё", "е").split())
+    for slug, name, aliases in MUSCLE_CATALOG:
+        candidates = (slug, name, *aliases)
+        if normalized in {
+            " ".join(candidate.casefold().replace("ё", "е").split())
+            for candidate in candidates
+        }:
+            return slug
+    return "undefined"
 
 
 def sqlite_path_from_url(url: str) -> str:
@@ -121,6 +151,7 @@ async def create_tables():
             units TEXT DEFAULT 'kg',
             notifications_enabled BOOLEAN DEFAULT FALSE,
             notification_time TEXT DEFAULT '18:00',
+            weekly_workout_goal INTEGER NOT NULL DEFAULT 3,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users (user_id)
@@ -297,6 +328,8 @@ async def create_tables():
             end_time TEXT,
             notes TEXT,
             template_id INTEGER,
+            source_table TEXT,
+            source_id TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
     """)
@@ -316,10 +349,60 @@ async def create_tables():
             distance REAL,
             notes TEXT,
             order_num INTEGER,
-            completed BOOLEAN DEFAULT FALSE
+            completed BOOLEAN DEFAULT FALSE,
+            source_table TEXT,
+            source_id TEXT,
+            FOREIGN KEY (session_id) REFERENCES workout_sessions (id) ON DELETE CASCADE
         )
     """)
     logger.info("✅ Таблицы workout_sessions/workout_exercises созданы")
+
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS workout_sets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            workout_exercise_id INTEGER NOT NULL,
+            set_number INTEGER NOT NULL,
+            reps INTEGER NOT NULL DEFAULT 0,
+            weight REAL NOT NULL DEFAULT 0,
+            completed BOOLEAN NOT NULL DEFAULT TRUE,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (workout_exercise_id)
+                REFERENCES workout_exercises (id) ON DELETE CASCADE,
+            UNIQUE(workout_exercise_id, set_number)
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS muscles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            slug TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL UNIQUE,
+            aliases TEXT NOT NULL DEFAULT '[]',
+            is_fallback BOOLEAN NOT NULL DEFAULT FALSE
+        )
+    """)
+    await db.execute("""
+        CREATE TABLE IF NOT EXISTS exercise_muscles (
+            exercise_name TEXT NOT NULL COLLATE NOCASE,
+            muscle_id INTEGER NOT NULL,
+            contribution REAL NOT NULL DEFAULT 1.0,
+            source TEXT NOT NULL DEFAULT 'user',
+            PRIMARY KEY (exercise_name, muscle_id),
+            FOREIGN KEY (muscle_id) REFERENCES muscles (id) ON DELETE CASCADE
+        )
+    """)
+    for slug, name, aliases in MUSCLE_CATALOG:
+        await db.execute(
+            """
+            INSERT INTO muscles (slug, name, aliases, is_fallback)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(slug) DO UPDATE SET
+                name = excluded.name,
+                aliases = excluded.aliases,
+                is_fallback = excluded.is_fallback
+            """,
+            (slug, name, json.dumps(aliases, ensure_ascii=False), slug == "undefined"),
+        )
+    await seed_exercise_muscle_catalog()
 
     await db.execute("""
         CREATE TABLE IF NOT EXISTS referrals (
@@ -354,6 +437,11 @@ async def create_tables():
         "ALTER TABLE workout_exercises ADD COLUMN planned_sets INTEGER",
         "ALTER TABLE workout_exercises ADD COLUMN planned_reps INTEGER",
         "ALTER TABLE workout_exercises ADD COLUMN planned_weight REAL",
+        "ALTER TABLE workout_sessions ADD COLUMN source_table TEXT",
+        "ALTER TABLE workout_sessions ADD COLUMN source_id TEXT",
+        "ALTER TABLE workout_exercises ADD COLUMN source_table TEXT",
+        "ALTER TABLE workout_exercises ADD COLUMN source_id TEXT",
+        "ALTER TABLE user_settings ADD COLUMN weekly_workout_goal INTEGER NOT NULL DEFAULT 3",
         "ALTER TABLE users ADD COLUMN pro_banner_shown_after_progress INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN pro_workout_milestone_prompt_shown INTEGER DEFAULT 0",
         "ALTER TABLE referrals ADD COLUMN reward_granted_at TIMESTAMP",
@@ -378,6 +466,122 @@ async def create_tables():
     await db.execute("CREATE INDEX IF NOT EXISTS idx_friends_user ON friends(user_id, status)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_friends_friend ON friends(friend_id, status)")
     await db.execute("CREATE INDEX IF NOT EXISTS idx_challenges_users ON challenges(user1_id, user2_id, status)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_workout_sessions_user_date ON workout_sessions(user_id, date)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_workout_exercises_session ON workout_exercises(session_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_workout_sets_exercise ON workout_sets(workout_exercise_id)")
+    await db.execute("CREATE INDEX IF NOT EXISTS idx_exercise_muscles_muscle ON exercise_muscles(muscle_id)")
+    await db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_sessions_source
+        ON workout_sessions(source_table, source_id)
+        WHERE source_table IS NOT NULL AND source_id IS NOT NULL
+        """
+    )
+    await db.execute(
+        """
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_workout_exercises_source
+        ON workout_exercises(source_table, source_id)
+        WHERE source_table IS NOT NULL AND source_id IS NOT NULL
+        """
+    )
+
+    await migrate_legacy_workouts()
     
     logger.info("✅ Все индексы созданы")
     logger.info("🎉 База данных полностью инициализирована!")
+
+
+async def migrate_legacy_workouts() -> None:
+    """Copy each legacy workout once, preserving its source identity."""
+    if not db.conn:
+        await db.connect()
+    conn = db.conn
+    await conn.execute("BEGIN IMMEDIATE")
+    try:
+        cursor = await conn.execute(
+            """
+            SELECT id, user_id, exercise_name, sets, reps, weight, duration,
+                   notes, created_at
+            FROM workouts
+            ORDER BY id
+            """
+        )
+        rows = await cursor.fetchall()
+        await cursor.close()
+        for row in rows:
+            source_id = str(row["id"])
+            cursor = await conn.execute(
+                """
+                INSERT OR IGNORE INTO workout_sessions
+                    (user_id, date, start_time, end_time, notes,
+                     source_table, source_id, created_at)
+                VALUES (?, COALESCE(date(?), date('now')), time(?), time(?), ?,
+                        'workouts', ?, COALESCE(?, CURRENT_TIMESTAMP))
+                """,
+                (
+                    row["user_id"], row["created_at"], row["created_at"],
+                    row["created_at"], row["notes"], source_id, row["created_at"],
+                ),
+            )
+            if cursor.rowcount:
+                session_id = cursor.lastrowid
+            else:
+                existing = await conn.execute(
+                    """
+                    SELECT id FROM workout_sessions
+                    WHERE source_table = 'workouts' AND source_id = ?
+                    """,
+                    (source_id,),
+                )
+                found = await existing.fetchone()
+                await existing.close()
+                session_id = found["id"]
+
+            sets = max(0, int(row["sets"] or 0))
+            reps = max(0, int(row["reps"] or 0))
+            weight = max(0.0, float(row["weight"] or 0))
+            await conn.execute(
+                """
+                INSERT OR IGNORE INTO workout_exercises
+                    (session_id, exercise_name, exercise_type, sets, reps,
+                     weight, duration, notes, order_num, completed,
+                     source_table, source_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, TRUE, 'workouts', ?)
+                """,
+                (
+                    session_id, row["exercise_name"],
+                    "cardio" if row["duration"] and not sets else "strength",
+                    sets, reps, weight, row["duration"], row["notes"], source_id,
+                ),
+            )
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
+
+
+async def seed_exercise_muscle_catalog() -> None:
+    """Idempotently attach catalog aliases to muscle rows."""
+    muscles = await db.fetch_all("SELECT id, slug FROM muscles")
+    slug_to_id = {row["slug"]: row["id"] for row in muscles}
+    fallback_id = slug_to_id.get("undefined")
+    for aliases, parts in EXERCISE_MUSCLE_CATALOG:
+        for alias in aliases:
+            name = " ".join(alias.strip().split())
+            if not name:
+                continue
+            for slug, contribution in parts:
+                muscle_id = slug_to_id.get(slug) or fallback_id
+                if muscle_id is None:
+                    continue
+                await db.execute(
+                    """
+                    INSERT INTO exercise_muscles
+                        (exercise_name, muscle_id, contribution, source)
+                    VALUES (?, ?, ?, 'catalog')
+                    ON CONFLICT(exercise_name, muscle_id) DO UPDATE SET
+                        contribution = excluded.contribution
+                    WHERE exercise_muscles.source = 'catalog'
+                    """,
+                    (name, muscle_id, contribution),
+                )

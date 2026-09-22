@@ -1,62 +1,49 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
-from aiogram.fsm.context import FSMContext
-from aiogram.fsm.state import State, StatesGroup
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime
 
+from aiogram import F, Router
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+
 from database.base import db
+from handlers.premium import build_teaser_paywall, premium_cta_markup
 from services.openai_service import openai_service
-from config import ADMIN_ID
+from services.premium_access import has_premium_access
+from services.progress_analytics import fetch_premium_analytics
 
 router = Router()
 
 class AIStates(StatesGroup):
     waiting_question = State()
 
-# ================ ПРОВЕРКА ПРЕМИУМ ================
-
-async def check_premium_access(user_id: int) -> bool:
-    """Проверка доступа к премиум-функциям"""
-    if user_id == ADMIN_ID:
-        return True
-    
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
+async def _ai_paywall(callback: CallbackQuery) -> bool:
+    if await has_premium_access(callback.from_user.id):
+        return False
+    await callback.message.edit_text(
+        build_teaser_paywall(
+            "🤖 *AI-советы*",
+            [
+                "Раздел открыт всем. Глубокий разбор тренировок, план и персональные ответы — в Premium.",
+            ],
+            [
+                "Совет на сегодня по вашим подходам",
+                "План тренировки",
+                "Анализ прогресса по цифрам",
+                "Ответы на вопросы о тренировках",
+            ],
+        ),
+        reply_markup=premium_cta_markup("ai_advice"),
     )
-    
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            return True
-    
-    return False
+    await callback.answer()
+    return True
 
-# ================ МЕНЮ AI-СОВЕТОВ ================
 
-@router.callback_query(F.data == "ai_advice")
+@router.callback_query(F.data.in_({"ai_advice", "menu_ai"}))
 async def ai_advice_menu(callback: CallbackQuery):
-    """Меню AI-советов"""
+    """AI hub is visible to everyone; deep actions are Premium."""
     user_id = callback.from_user.id
-    
-    # Проверка премиум-доступа
-    if not await check_premium_access(user_id):
-        await callback.answer("❌ Только для премиум!", show_alert=True)
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
-        )
-        
-        await callback.message.answer(
-            "🤖 *AI-советы*\n\n"
-            "Эта функция доступна только с премиум-подпиской!\n\n"
-            "💰 150₽/месяц",
-            reply_markup=builder.as_markup()
-        )
-        return
-    
+    premium = await has_premium_access(user_id)
     today = datetime.now().date().isoformat()
     today_workouts = await db.fetch_one(
         """
@@ -72,15 +59,17 @@ async def ai_advice_menu(callback: CallbackQuery):
     )
     today_status = "тренировка выполнена ✅" if (today_workouts and today_workouts["cnt"] > 0) else "тренировки сегодня ещё не было ⏳"
     streak = stats["current_streak"] if stats else 0
+    access = "Premium-разбор доступен" if premium else "Базовый доступ: меню открыто, разбор — в Premium"
 
     text = (
         "🤖 *AI-ассистент*\n\n"
         "*Сегодня:*\n"
         f"• {today_status}\n"
-        f"• Стрик: {streak} дн.\n\n"
+        f"• Стрик: {streak} дн.\n"
+        f"• {access}\n\n"
         "Выберите действие:"
     )
-    
+
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="💡 Совет на сегодня", callback_data="ai_daily_tip"),
@@ -90,10 +79,12 @@ async def ai_advice_menu(callback: CallbackQuery):
         InlineKeyboardButton(text="📈 Анализ прогресса", callback_data="ai_analyze"),
         InlineKeyboardButton(text="❓ Задать вопрос", callback_data="ai_ask")
     )
+    if not premium:
+        builder.row(InlineKeyboardButton(text="👑 Оформить Premium", callback_data="payment"))
     builder.row(
         InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")
     )
-    
+
     await callback.message.edit_text(text, reply_markup=builder.as_markup())
     await callback.answer()
 
@@ -104,7 +95,7 @@ async def ai_daily_tip(callback: CallbackQuery):
     """Получить совет на сегодня"""
     user_id = callback.from_user.id
     
-    if not await check_premium_access(user_id):
+    if await _ai_paywall(callback):
         return
     
     await callback.message.edit_text("🤔 *Думаю...* Анализирую ваши тренировки...")
@@ -165,9 +156,7 @@ async def ai_daily_tip(callback: CallbackQuery):
 @router.callback_query(F.data == "ai_workout_plan")
 async def ai_workout_plan(callback: CallbackQuery):
     """Сгенерировать план тренировки"""
-    user_id = callback.from_user.id
-    
-    if not await check_premium_access(user_id):
+    if await _ai_paywall(callback):
         return
     
     await callback.message.edit_text("🤔 *Составляю план тренировки...*")
@@ -203,36 +192,26 @@ async def ai_analyze(callback: CallbackQuery):
     """Анализ прогресса"""
     user_id = callback.from_user.id
     
-    if not await check_premium_access(user_id):
+    if await _ai_paywall(callback):
         return
     
     await callback.message.edit_text("🤔 *Анализирую ваш прогресс...*")
     
-    # Получаем историю тренировок
-    history = await db.fetch_all("""
-        SELECT 
-            ws.date,
-            we.exercise_name,
-            we.sets,
-            we.reps,
-            we.weight
-        FROM workout_exercises we
-        JOIN workout_sessions ws ON we.session_id = ws.id
-        WHERE ws.user_id = ?
-        ORDER BY ws.date DESC
-        LIMIT 30
-    """, (user_id,))
-    
+    analytics = await fetch_premium_analytics(user_id, 30)
     user = await db.fetch_one(
         "SELECT first_name FROM users WHERE user_id = ?",
         (user_id,)
     )
-    
     user_data = {
-        'first_name': user['first_name'] if user else 'Пользователь'
+        "first_name": user["first_name"] if user else "Пользователь",
+        "analytics": {
+            "volume": analytics["volume"],
+            "regularity": analytics["regularity"],
+            "strength": analytics["strength"][:5],
+            "muscle_load": analytics["muscle_load"][:6],
+        },
     }
-    
-    analysis = await openai_service.analyze_progress(user_data, history)
+    analysis = await openai_service.analyze_progress(user_data, analytics.get("history") or [])
     
     if analysis:
         text = f"🤖 *Анализ прогресса*\n\n{analysis}"
@@ -253,9 +232,7 @@ async def ai_analyze(callback: CallbackQuery):
 @router.callback_query(F.data == "ai_ask")
 async def ai_ask(callback: CallbackQuery, state: FSMContext):
     """Задать вопрос AI"""
-    user_id = callback.from_user.id
-    
-    if not await check_premium_access(user_id):
+    if await _ai_paywall(callback):
         return
     
     await callback.message.edit_text(
@@ -278,6 +255,17 @@ async def process_ai_question(message: Message, state: FSMContext):
     
     if message.text == "/cancel":
         await message.answer("❌ Вопрос отменен.")
+        await state.clear()
+        return
+
+    if not await has_premium_access(user_id):
+        await message.answer(
+            build_teaser_paywall(
+                "🤖 *AI-советы*",
+                ["Вопросы к AI доступны в Premium."],
+            ),
+            reply_markup=premium_cta_markup("ai_advice"),
+        )
         await state.clear()
         return
     

@@ -6,8 +6,9 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, date, timedelta
 import logging
 
-from config import ADMIN_ID
 from database.base import db
+from handlers.premium import build_teaser_paywall, premium_cta_markup
+from services.premium_access import has_premium_access
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -28,25 +29,6 @@ class CalorieStates(StatesGroup):
     waiting_food_fat = State()
     waiting_food_carbs = State()
     waiting_search_query = State()
-
-# ================ ПРОВЕРКА ПРЕМИУМ ================
-
-async def check_premium_access(user_id: int) -> bool:
-    """Проверка доступа к премиум-функциям"""
-    if user_id == ADMIN_ID:
-        return True
-    
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            return True
-    
-    return False
 
 # ================ БАЗА ПРОДУКТОВ ================
 
@@ -105,20 +87,15 @@ async def calorie_tracker_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     # Проверка премиум-доступа
-    if not await check_premium_access(user_id):
-        await callback.answer("❌ Премиум-функция!", show_alert=True)
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
+    if not await has_premium_access(user_id):
+        await callback.message.edit_text(
+            build_teaser_paywall(
+                "🔥 *Трекер калорий*",
+                ["Нормы КБЖУ и дневник еды доступны в Premium."],
+            ),
+            reply_markup=premium_cta_markup("menu_profile"),
         )
-        
-        await callback.message.answer(
-            "👑 *Премиум-доступ*\n\n"
-            "Трекер калорий доступен только с премиум-подпиской!\n\n"
-            "💰 150₽/месяц",
-            reply_markup=builder.as_markup()
-        )
+        await callback.answer()
         return
     
     # Получаем данные за сегодня
@@ -188,7 +165,7 @@ async def calorie_tracker_menu(callback: CallbackQuery):
     #    InlineKeyboardButton(text="🔍 ПОИСК ПРОДУКТОВ", callback_data="search_food")
     #)
     builder.row(
-        InlineKeyboardButton(text="◀️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="◀️ НАЗАД", callback_data="menu_profile")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())

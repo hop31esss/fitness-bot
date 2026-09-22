@@ -10,94 +10,141 @@ import logging
 from database.base import db
 from services.premium_triggers import maybe_send_workout_milestone_prompt
 from handlers.referral import maybe_grant_referrer_retention_bonus
+from utils.units import to_kg
 
 router = Router()
 logger = logging.getLogger(__name__)
 
 
-async def persist_session_exercises_from_state(session_id: int, exercises: list):
-    """Перезаписывает упражнения сессии актуальными данными из state."""
-    await db.execute("DELETE FROM workout_exercises WHERE session_id = ?", (session_id,))
+def _exact_sets(exercise: dict) -> list[tuple[int, int, float]]:
+    """Return normalized (set number, reps, kg) rows for a strength exercise."""
+    count = max(0, int(exercise.get("sets") or 0))
+    set_data = exercise.get("set_data") or []
+    reps_list = exercise.get("reps_list") or []
+    weights = exercise.get("weights") or []
     rows = []
-    for i, ex in enumerate(exercises, start=1):
-        if ex.get("type") != "strength":
-            continue
-        rows.append((
-            session_id,
-            ex.get("name"),
-            ex.get("type", "strength"),
-            ex.get("sets"),
-            ex.get("reps"),
-            ex.get("weight"),
-            ex.get("planned_sets"),
-            ex.get("planned_reps"),
-            ex.get("planned_weight"),
-            i,
-        ))
-    if rows:
-        await db.execute_many(
-            """
-            INSERT INTO workout_exercises
-            (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            rows,
+    for index in range(count):
+        details = set_data[index] if index < len(set_data) else {}
+        reps = details.get(
+            "reps",
+            reps_list[index] if index < len(reps_list) else exercise.get("reps", 0),
         )
+        weight = details.get(
+            "weight",
+            weights[index] if index < len(weights) else exercise.get("weight", 0),
+        )
+        rows.append((index + 1, max(0, int(reps or 0)), max(0.0, float(weight or 0))))
+    return rows
 
-async def init_workout_tables():
-    """Создание таблиц для тренировок"""
+
+def _replace_exact_sets(
+    exercise: dict,
+    *,
+    count: int | None = None,
+    reps: int | None = None,
+    weight: float | None = None,
+) -> None:
+    """Apply an aggregate edit without discarding untouched per-set values."""
+    rows = _exact_sets(exercise)
+    target_count = len(rows) if count is None else max(1, count)
+    seed_reps = rows[-1][1] if rows else max(0, int(exercise.get("reps") or 0))
+    seed_weight = rows[-1][2] if rows else max(0.0, float(exercise.get("weight") or 0))
+    while len(rows) < target_count:
+        rows.append((len(rows) + 1, seed_reps, seed_weight))
+    rows = rows[:target_count]
+    exercise["sets"] = target_count
+    exercise["set_data"] = [
+        {
+            "reps": reps if reps is not None else row_reps,
+            "weight": weight if weight is not None else row_weight,
+            "weight_done": True,
+        }
+        for _, row_reps, row_weight in rows
+    ]
+    exercise.pop("reps_list", None)
+    exercise.pop("weights", None)
+    if reps is not None:
+        exercise["reps"] = reps
+        exercise["reps_display"] = str(reps)
+    if weight is not None:
+        exercise["weight"] = weight
+        exercise["weight_display"] = f"{weight:g} кг" if weight else "б/в"
+
+
+async def persist_session_exercises_from_state(session_id: int, exercises: list):
+    """Atomically replace canonical exercise rows and their exact sets."""
+    if not db.conn:
+        await db.connect()
+    conn = db.conn
+    await conn.execute("BEGIN IMMEDIATE")
     try:
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS workout_sessions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER NOT NULL,
-                date TEXT NOT NULL,
-                start_time TEXT,
-                end_time TEXT,
-                notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        await conn.execute(
+            """
+            DELETE FROM workout_sets
+            WHERE workout_exercise_id IN (
+                SELECT id FROM workout_exercises WHERE session_id = ?
             )
-        """)
-        logger.info("✅ Таблица workout_sessions создана")
-        
-        await db.execute("""
-            CREATE TABLE IF NOT EXISTS workout_exercises (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                session_id INTEGER NOT NULL,
-                exercise_name TEXT NOT NULL,
-                exercise_type TEXT DEFAULT 'strength',
-                sets INTEGER,
-                reps INTEGER,
-                weight REAL,
-                planned_sets INTEGER,
-                planned_reps INTEGER,
-                planned_weight REAL,
-                duration INTEGER,
-                distance REAL,
-                notes TEXT,
-                order_num INTEGER
+            """,
+            (session_id,),
+        )
+        await conn.execute("DELETE FROM workout_exercises WHERE session_id = ?", (session_id,))
+        cursor = await conn.execute(
+            """
+            SELECT COALESCE(us.units, 'kg') AS units
+            FROM workout_sessions ws
+            LEFT JOIN user_settings us ON us.user_id = ws.user_id
+            WHERE ws.id = ?
+            """,
+            (session_id,),
+        )
+        units_row = await cursor.fetchone()
+        units = units_row["units"] if units_row else "kg"
+        for order_num, exercise in enumerate(exercises, start=1):
+            if exercise.get("type") != "strength":
+                continue
+            exact_sets = [
+                (number, reps, to_kg(weight, units))
+                for number, reps, weight in _exact_sets(exercise)
+            ]
+            aggregate_reps = (
+                sum(item[1] for item in exact_sets) / len(exact_sets)
+                if exact_sets else 0
             )
-        """)
-        logger.info("✅ Таблица workout_exercises создана")
-        await db.execute("ALTER TABLE workout_sessions ADD COLUMN template_id INTEGER")
-        logger.info("✅ Колонка 'template_id' добавлена")
-        await db.execute("""
-            ALTER TABLE workout_exercises ADD COLUMN completed BOOLEAN DEFAULT FALSE
-        """)
-        logger.info("✅ Колонка 'completed' добавлена")
-        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_sets INTEGER")
-        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_reps INTEGER")
-        await db.execute("ALTER TABLE workout_exercises ADD COLUMN planned_weight REAL")
-        logger.info("✅ Planned-колонки добавлены")
-        
-    except Exception as e:
-        # Если колонка уже существует - игнорируем ошибку
-        if "duplicate column name" not in str(e).lower() and "already exists" not in str(e).lower():
-            logger.error(f"❌ Ошибка: {e}")
-        return True
-    except Exception as e:
-        logger.error(f"❌ Ошибка создания таблиц: {e}")
-        return False
+            aggregate_weight = (
+                sum(item[2] for item in exact_sets) / len(exact_sets)
+                if exact_sets else 0
+            )
+            cursor = await conn.execute(
+                """
+                INSERT INTO workout_exercises
+                    (session_id, exercise_name, exercise_type, sets, reps, weight,
+                     planned_sets, planned_reps, planned_weight, order_num)
+                VALUES (?, ?, 'strength', ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id, exercise.get("name"), len(exact_sets),
+                    aggregate_reps, aggregate_weight,
+                    exercise.get("planned_sets"), exercise.get("planned_reps"),
+                    exercise.get("planned_weight"), order_num,
+                ),
+            )
+            exercise_id = cursor.lastrowid
+            if exact_sets:
+                await conn.executemany(
+                    """
+                    INSERT INTO workout_sets
+                        (workout_exercise_id, set_number, reps, weight, completed)
+                    VALUES (?, ?, ?, ?, TRUE)
+                    """,
+                    [
+                        (exercise_id, set_number, reps, weight)
+                        for set_number, reps, weight in exact_sets
+                    ],
+                )
+        await conn.commit()
+    except Exception:
+        await conn.rollback()
+        raise
 
 class WorkoutSessionStates(StatesGroup):
     choosing_exercise_type = State()
@@ -372,24 +419,8 @@ async def save_exercise_from_set_data(state: FSMContext, message: Message):
     exercises.append(exercise)
     await state.update_data(exercises=exercises)
     
-    # Сохраняем в БД (усреднённые данные)
-    session_id = data['session_id']
-    order_num = len(exercises)
-    
     try:
-        if exercise['type'] == 'strength':
-            avg_weight = sum(weight_values) / len(weight_values) if weight_values else None
-            avg_reps = sum(reps_values) / len(reps_values)
-            
-            await db.execute("""
-                INSERT INTO workout_exercises 
-                (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (session_id, exercise['name'], 'strength', 
-                  exercise['sets'], avg_reps, avg_weight,
-                  exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
-                  order_num))
-                  
+        await persist_session_exercises_from_state(data["session_id"], exercises)
         logger.info(f"✅ Упражнение {exercise['name']} сохранено")
     except Exception as e:
         logger.error(f"❌ Ошибка сохранения упражнения: {e}")    
@@ -698,22 +729,9 @@ async def save_exercise_with_weights(state: FSMContext, message: Message): #noqa
     exercises.append(exercise)
     await state.update_data(exercises=exercises)
     
-    # Сохраняем в базу (пока упрощенно - сохраняем средний вес)
-    session_id = data['session_id']
-    order_num = len(exercises)
-    
     # Вычисляем средний вес для отображения
     weights = [w for w in data.get('weights', []) if w]
-    avg_weight = sum(weights) / len(weights) if weights else None
-    
-    await db.execute("""
-        INSERT INTO workout_exercises 
-        (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    """, (session_id, exercise['name'], 'strength', 
-          exercise['sets'], exercise['reps'], avg_weight,
-          exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
-          order_num))
+    await persist_session_exercises_from_state(data["session_id"], exercises)
     
     # Показываем детали
     weight_details = ""
@@ -814,34 +832,9 @@ async def save_exercise(state: FSMContext, message: Message):
     exercises.append(exercise)
     await state.update_data(exercises=exercises)
     
-    # Сохраняем в БД (упрощенно - для сложных случаев нужно менять структуру БД)
-    session_id = data['session_id']
-    order_num = len(exercises)
-    
     try:
         if exercise['type'] == 'strength':
-            # Сохраняем усредненные данные (пока так)
-            avg_weight = None
-            if 'weights' in exercise:
-                w = [w for w in exercise['weights'] if w]
-                avg_weight = sum(w) / len(w) if w else None
-            else:
-                avg_weight = exercise.get('weight')
-            
-            avg_reps = None
-            if 'reps_list' in exercise:
-                avg_reps = sum(exercise['reps_list']) / len(exercise['reps_list'])
-            else:
-                avg_reps = exercise.get('reps')
-            
-            await db.execute("""
-                INSERT INTO workout_exercises 
-                (session_id, exercise_name, exercise_type, sets, reps, weight, planned_sets, planned_reps, planned_weight, order_num)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (session_id, exercise['name'], 'strength', 
-                  exercise['sets'], avg_reps, avg_weight,
-                  exercise.get('planned_sets'), exercise.get('planned_reps'), exercise.get('planned_weight'),
-                  order_num))
+            await persist_session_exercises_from_state(data["session_id"], exercises)
         else:
             # кардио и растяжка без изменений
             pass
@@ -962,6 +955,7 @@ async def edit_current_field(callback: CallbackQuery, state: FSMContext):
     if field == "delete":
         exercises.pop(ex_index)
         await state.update_data(exercises=exercises)
+        await persist_session_exercises_from_state(data["session_id"], exercises)
         await callback.answer("✅ Удалено")
         await show_workout_menu(callback.message, state)
         return
@@ -986,23 +980,28 @@ async def save_current_field(message: Message, state: FSMContext):
     ex = exercises[ex_index]
     try:
         if field == "sets":
-            ex["sets"] = int(message.text)
+            sets = int(message.text)
+            if sets <= 0:
+                raise ValueError
+            _replace_exact_sets(ex, count=sets)
         elif field == "reps":
             reps = int(message.text)
-            ex["reps"] = reps
-            ex["reps_display"] = str(reps)
+            if reps <= 0:
+                raise ValueError
+            _replace_exact_sets(ex, reps=reps)
         elif field == "weight":
             if message.text.strip() == "-":
-                ex["weight"] = None
-                ex["weight_display"] = "б/в"
+                _replace_exact_sets(ex, weight=0)
             else:
                 weight = float(message.text.replace(",", "."))
-                ex["weight"] = weight
-                ex["weight_display"] = f"{weight} кг"
+                if weight < 0:
+                    raise ValueError
+                _replace_exact_sets(ex, weight=weight)
     except ValueError:
         await message.answer("❌ Неверный формат")
         return
 
     exercises[ex_index] = ex
     await state.update_data(exercises=exercises)
+    await persist_session_exercises_from_state(data["session_id"], exercises)
     await show_workout_menu(message, state)

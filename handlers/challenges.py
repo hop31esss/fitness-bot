@@ -5,8 +5,9 @@ from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from datetime import datetime, timedelta
 
+from handlers.premium import premium_cta_markup
+from services.premium_access import has_premium_access
 from database.base import db
-from config import ADMIN_ID
 
 router = Router()
 
@@ -179,22 +180,7 @@ async def challenge_enter_days(message: Message, state: FSMContext):
 
 # ================ ПРОВЕРКА ПРЕМИУМ ================
 
-async def check_premium_access(user_id: int) -> bool:
-    """Проверка доступа к премиум-функциям"""
-    if user_id == ADMIN_ID:
-        return True
-    
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
-    )
-    
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            return True
-    
-    return False
+from services.premium_access import has_premium_access
 
 # ================ МЕНЮ ЧЕЛЛЕНДЖЕЙ ================
 
@@ -204,8 +190,12 @@ async def challenges_menu(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     # Проверка премиум-доступа
-    if not await check_premium_access(user_id):
-        await callback.answer("❌ Премиум-функция!", show_alert=True)
+    if not await has_premium_access(user_id):
+        await callback.message.edit_text(
+            "👑 *Челленджи* доступны в Premium.",
+            reply_markup=premium_cta_markup("menu_profile"),
+        )
+        await callback.answer()
         return
     
     # Получаем активные челленджи пользователя

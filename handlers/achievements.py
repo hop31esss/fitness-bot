@@ -43,7 +43,7 @@ async def achievements_menu(callback: CallbackQuery):
         InlineKeyboardButton(text="🏆 АЧИВКИ", callback_data="achievements_list")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_progress")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())

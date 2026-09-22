@@ -145,7 +145,7 @@ async def show_payment_options(message: Message):
     )
     builder.row(
         InlineKeyboardButton(text="❓ Помощь", callback_data="payment_help"),
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_profile")
     )
     
     await message.answer(text, reply_markup=builder.as_markup())

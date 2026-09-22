@@ -30,7 +30,16 @@ async def profile_menu(callback: CallbackQuery):
     await callback.message.edit_text(text, reply_markup=keyboard)
     await callback.answer()
 
-@router.callback_query(F.data == "progress")
+@router.callback_query(F.data.in_({"progress", "stats"}))
+async def show_canonical_progress(callback: CallbackQuery):
+    """Совместимые старые ссылки ведут в единый экран прогресса."""
+    from handlers.progress_stats import _send_progress_screen
+
+    await _send_progress_screen(callback)
+    await callback.answer()
+
+
+@router.callback_query(F.data == "legacy_progress")
 async def show_progress(callback: CallbackQuery):
     """Показ прогресса с графиками"""
     user_id = callback.from_user.id
@@ -208,13 +217,13 @@ async def show_progress(callback: CallbackQuery):
         InlineKeyboardButton(text="📊 Детали", callback_data="stats")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile")
     )
     
     await callback.message.answer(text, reply_markup=builder.as_markup())
     await callback.answer()
 
-@router.callback_query(F.data == "stats")
+@router.callback_query(F.data == "legacy_stats")
 async def show_detailed_stats(callback: CallbackQuery):
     """Детальная статистика"""
     user_id = callback.from_user.id
@@ -310,7 +319,7 @@ def get_profile_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="🔄 Экспорт", callback_data="export_data")
     )
     builder.row(
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")  # Изменен текст
+        InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile")
     )
     
     return builder.as_markup()

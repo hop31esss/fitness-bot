@@ -1,12 +1,11 @@
-from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
+from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime
 
-from database.base import db
-from config import ADMIN_ID
+from services.premium_access import has_premium_access
+from services.progress_analytics import estimated_1rm, format_kg
 
 router = Router()
 
@@ -14,18 +13,17 @@ class OneRepMaxStates(StatesGroup):
     waiting_weight = State()
     waiting_reps = State()
 
-# Функция для создания клавиатуры с кнопками навигации
-def get_navigation_keyboard():
-    """Клавиатура с кнопками навигации"""
+def get_navigation_keyboard(premium: bool = True):
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="🔄 Новый расчет", callback_data="one_rep_max"),
-        InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В меню", callback_data="menu_profile"),
     )
+    if not premium:
+        builder.row(InlineKeyboardButton(text="👑 Получить Premium", callback_data="payment"))
     return builder.as_markup()
 
 def get_cancel_keyboard():
-    """Клавиатура с кнопкой отмены"""
     builder = InlineKeyboardBuilder()
     builder.row(
         InlineKeyboardButton(text="❌ Отмена", callback_data="one_rep_max_cancel")
@@ -34,57 +32,15 @@ def get_cancel_keyboard():
 
 @router.callback_query(F.data == "one_rep_max")
 async def one_rep_max_menu(callback: CallbackQuery, state: FSMContext):
-    """Меню калькулятора 1ПМ"""
-    user_id = callback.from_user.id
-    
-    # Проверка доступа
-    if user_id == ADMIN_ID:
-        await callback.message.edit_text(
-            "🏋️ *Калькулятор 1ПМ*\n\n"
-            "Введите вес (кг):\n\n"
-            "для отмены нажмите кнопку ниже",
-            reply_markup=get_cancel_keyboard()
-        )
-        await state.set_state(OneRepMaxStates.waiting_weight)
-        await callback.answer()
-        return
-    
-    # Проверка премиум-доступа
-    user = await db.fetch_one(
-        "SELECT is_subscribed, subscription_until FROM users WHERE user_id = ?",
-        (user_id,)
+    """Калькулятор доступен всем; история и сравнение — в Premium."""
+    await callback.message.edit_text(
+        "🏋️ *Калькулятор 1ПМ*\n\n"
+        "Введите вес (кг):\n\n"
+        "для отмены нажмите кнопку ниже",
+        reply_markup=get_cancel_keyboard(),
     )
-    
-    is_premium = False
-    if user and user['is_subscribed'] and user['subscription_until']:
-        until = datetime.fromisoformat(user['subscription_until'].replace('Z', '+00:00'))
-        if datetime.now() <= until:
-            is_premium = True
-    
-    if is_premium:
-        await callback.message.edit_text(
-            "🏋️ *Калькулятор 1ПМ*\n\n"
-            "Введите вес (кг):\n\n"
-            "_(для отмены нажмите кнопку ниже)_",
-            reply_markup=get_cancel_keyboard()
-        )
-        await state.set_state(OneRepMaxStates.waiting_weight)
-        await callback.answer()
-    else:
-        await callback.answer("❌ Премиум-функция!", show_alert=True)
-        
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="👑 Премиум", callback_data="show_premium_info")
-        )
-        
-        await callback.message.answer(
-            "👑 *Премиум-доступ*\n\n"
-            "Калькулятор 1ПМ доступен только с премиум-подпиской!\n\n"
-            "💰 150₽/месяц\n\n"
-            "Приобрести можно у администратора: @hop31esss",
-            reply_markup=builder.as_markup()
-        )
+    await state.set_state(OneRepMaxStates.waiting_weight)
+    await callback.answer()
 
 @router.callback_query(F.data == "one_rep_max_cancel")
 async def one_rep_max_cancel(callback: CallbackQuery, state: FSMContext):
@@ -94,7 +50,7 @@ async def one_rep_max_cancel(callback: CallbackQuery, state: FSMContext):
         "❌ *Расчет отменен*\n\n"
         "Возвращайтесь, когда захотите рассчитать 1ПовторныйМаксимум! 💪",
         reply_markup=InlineKeyboardBuilder().row(
-            InlineKeyboardButton(text="👋 В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="👋 В меню", callback_data="menu_profile")
         ).as_markup()
     )
     await callback.answer()
@@ -132,8 +88,7 @@ async def process_reps(message: Message, state: FSMContext):
         data = await state.get_data()
         weight = data['weight']
         
-        # Расчет по формуле Эпли
-        one_rep_max = weight * (1 + reps / 30)
+        one_rep_max = estimated_1rm(weight, reps)
         
         # Расчет процентов
         percentages = {
@@ -148,22 +103,30 @@ async def process_reps(message: Message, state: FSMContext):
             "60%": one_rep_max * 0.60,
         }
         
-        # Создаем таблицу процентов
         percent_table = ""
         for percent, value in percentages.items():
-            percent_table += f"• {percent}: {value:.1f} кг\n"
+            percent_table += f"• {percent}: {format_kg(value, 1)} кг\n"
         
-        await message.answer(
+        premium = await has_premium_access(message.from_user.id)
+        text = (
             f"✅ *Результат расчета 1ПМ*\n\n"
-            f"🏋️ *Ваш 1ПМ:* **{one_rep_max:.1f} кг**\n\n"
+            f"💪 Расчётный 1ПМ ≈ *{format_kg(one_rep_max, 1)} кг*\n\n"
             f"📊 *Исходные данные:*\n"
-            f"• Вес: {weight} кг\n"
+            f"• Вес: {format_kg(weight, 1)} кг\n"
             f"• Повторения: {reps}\n\n"
             f"📈 *Проценты от максимума:*\n"
-            f"{percent_table}\n"
-            f"💡 *Совет:* Для роста силы работайте в диапазоне 80-90% от 1ПМ",
-            reply_markup=get_navigation_keyboard()
+            f"{percent_table}"
         )
+        if not premium:
+            text += (
+                "\n────────────────\n\n"
+                "💎 *В Premium ты также сможешь:*\n"
+                "• хранить историю 1ПМ\n"
+                "• отслеживать изменение силы\n"
+                "• видеть личные рекорды\n"
+                "• сравнивать результаты по периодам\n"
+            )
+        await message.answer(text, reply_markup=get_navigation_keyboard(premium))
         await state.clear()
         
     except ValueError:

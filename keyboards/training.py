@@ -14,7 +14,7 @@ def get_training_menu_keyboard() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="📝 ДОБАВИТЬ УПРАЖНЕНИЕ", callback_data="add_exercise")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_training")
     )
     
     return builder.as_markup()
@@ -35,7 +35,7 @@ def get_timer_keyboard() -> InlineKeyboardMarkup:
     )
     builder.row(
         InlineKeyboardButton(text="🛑 Стоп", callback_data="timer_stop"),
-        InlineKeyboardButton(text="↩️ Назад", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ Назад", callback_data="menu_training")
     )
     
     return builder.as_markup()

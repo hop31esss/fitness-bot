@@ -113,7 +113,7 @@ async def show_referral_menu(message: Message):
         InlineKeyboardButton(text="🏆 РЕЙТИНГ", callback_data="referral_leaderboard")
     )
     builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_profile")
     )
     
     await message.answer(text, reply_markup=builder.as_markup())

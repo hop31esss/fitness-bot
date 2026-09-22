@@ -142,7 +142,7 @@ async def templates_menu(callback: CallbackQuery):
             InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ", callback_data="template_edit_list")
         )
     builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_training")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())

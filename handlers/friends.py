@@ -43,7 +43,7 @@ async def friends_menu(callback: CallbackQuery):
     )
     builder.row(
         InlineKeyboardButton(text="📨 Входящие заявки", callback_data="friend_requests"),
-        InlineKeyboardButton(text="↩️ В меню", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ В профиль", callback_data="menu_profile")
     )
     builder.row(
         InlineKeyboardButton(text="🏆 ЧЕЛЛЕНДЖИ", callback_data="challenges_menu")

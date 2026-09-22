@@ -39,7 +39,7 @@ async def exercises_main_menu(callback: CallbackQuery):
     )
     builder.row(
         InlineKeyboardButton(text="🔤 АЛИАСЫ", callback_data="exercise_aliases"),
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="back_to_main")
+        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="menu_training")
     )
     
     await callback.message.edit_text(text, reply_markup=builder.as_markup())

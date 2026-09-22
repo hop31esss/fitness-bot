@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock
 import pytest
 
 from handlers import start as start_handlers
+from keyboards.main import get_main_keyboard
 
 
 def _fake_callback(data: str, user_id: int = 1001, first_name: str = "Test"):
@@ -18,7 +19,7 @@ def _fake_callback(data: str, user_id: int = 1001, first_name: str = "Test"):
 
 
 @pytest.mark.asyncio
-async def test_start_payload_has_open_full_menu_button(monkeypatch):
+async def test_start_payload_has_open_hubs_button(monkeypatch):
     async def fake_fetch_one(query, params):
         if "COUNT" in query:
             return {"cnt": 0}
@@ -29,11 +30,12 @@ async def test_start_payload_has_open_full_menu_button(monkeypatch):
     text, markup = await start_handlers.build_start_payload(1, "Ivan")
     assert "Сегодня" in text
     buttons = [b.text for row in markup.inline_keyboard for b in row]
-    assert "📋 Открыть всё меню" in buttons
+    assert "📋 Открыть разделы" in buttons
+    assert "📊 Прогресс" in buttons
 
 
 @pytest.mark.asyncio
-async def test_open_full_menu_shows_main_keyboard():
+async def test_open_full_menu_shows_hub_keyboard():
     callback = _fake_callback("back_to_main")
     await start_handlers.back_to_main(callback)
 
@@ -41,22 +43,43 @@ async def test_open_full_menu_shows_main_keyboard():
     callback.message.edit_text.assert_awaited_once()
     _, kwargs = callback.message.edit_text.await_args
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert "📋 ЖУРНАЛ ТРЕНИРОВОК" in labels
-    assert "📊 ПРОГРЕСС И СТАТИСТИКА" in labels
-    assert "📔 ДНЕВНИК ТРЕНИРОВОК" in labels
-    assert "📚 МОИ ПРОГРАММЫ" in labels
+    assert "🏋️ ТРЕНИРОВКИ" in labels
+    assert "📊 ПРОГРЕСС" in labels
+    assert "🤖 AI-СОВЕТЫ" in labels
+    assert "👤 ПРОФИЛЬ" in labels
+    assert "💳 ПЛАТЕЖИ" not in labels
+    assert "👑 ПРЕМИУМ" not in labels
+
+
+def test_main_keyboard_has_four_hubs_only():
+    labels = [b.text for row in get_main_keyboard().inline_keyboard for b in row]
+    assert labels == ["🏋️ ТРЕНИРОВКИ", "📊 ПРОГРЕСС", "🤖 AI-СОВЕТЫ", "👤 ПРОФИЛЬ"]
 
 
 @pytest.mark.asyncio
-async def test_open_sub_menu_from_full_menu():
+async def test_open_training_hub_from_legacy_callback():
     callback = _fake_callback("full_menu_open_sub")
-    await start_handlers.full_menu_open_sub(callback)
+    await start_handlers.menu_training(callback)
 
     callback.message.edit_text.assert_awaited_once()
-    _, kwargs = callback.message.edit_text.await_args
-    assert "Разделы" in kwargs["text"]
+    args, kwargs = callback.message.edit_text.await_args
+    assert "Тренировки" in args[0]
     labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
-    assert labels[-1] == "🔙 Назад"
+    assert "🏋️ Начать тренировку" in labels
+    assert "📔 Дневник" in labels
+    assert "◀️ Разделы" in labels
+
+
+@pytest.mark.asyncio
+async def test_profile_hub_nests_monetization():
+    callback = _fake_callback("menu_profile")
+    await start_handlers.menu_profile(callback)
+    _, kwargs = callback.message.edit_text.await_args
+    labels = [b.text for row in kwargs["reply_markup"].inline_keyboard for b in row]
+    assert "👑 Premium" in labels
+    assert "💳 Оплата" in labels
+    assert "🤝 Рефералы" in labels
+    assert "⚙️ Настройки" in labels
 
 
 @pytest.mark.asyncio
@@ -89,4 +112,3 @@ async def test_back_to_start_edits_message(monkeypatch):
     callback.message.edit_text.assert_awaited_once()
     args, _ = callback.message.edit_text.await_args
     assert args[0] == "START SCREEN"
-
