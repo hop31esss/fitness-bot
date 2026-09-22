@@ -11,6 +11,7 @@ from services.progress_analytics import (
     fetch_volume_by_date,
     format_kg,
 )
+from utils.clock import now
 
 router = Router()
 
@@ -103,8 +104,8 @@ async def _render_calendar(callback: CallbackQuery, year: int, month: int) -> No
 
 @router.callback_query(F.data == "calendar")
 async def show_calendar(callback: CallbackQuery):
-    now = datetime.now()
-    await _render_calendar(callback, now.year, now.month)
+    current = now()
+    await _render_calendar(callback, current.year, current.month)
     await callback.answer()
 
 

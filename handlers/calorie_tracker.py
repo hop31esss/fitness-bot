@@ -3,12 +3,13 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 import logging
 
 from database.base import db
 from handlers.premium import build_teaser_paywall, premium_cta_markup
 from services.premium_access import has_premium_access
+from utils.clock import today as local_today, today_iso
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ async def calorie_tracker_menu(callback: CallbackQuery):
         return
     
     # Получаем данные за сегодня
-    today_date = date.today().isoformat()
+    today_date = today_iso()
     
     # Получаем норму пользователя
     norm = await db.fetch_one(
@@ -564,7 +565,7 @@ async def process_food_amount(message: Message, state: FSMContext):
         
         data = await state.get_data()
         user_id = message.from_user.id
-        today = date.today().isoformat()
+        today = today_iso()
         
         if 'selected_food' in data:
             food = data['selected_food']
@@ -627,7 +628,7 @@ async def calorie_history(callback: CallbackQuery):
     user_id = callback.from_user.id
     
     # Получаем последние 7 дней
-    end_date = date.today()
+    end_date = local_today()
     start_date = end_date - timedelta(days=7)
     
     history = await db.fetch_all("""

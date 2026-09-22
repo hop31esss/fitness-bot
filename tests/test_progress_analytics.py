@@ -5,6 +5,7 @@ import pytest
 from database import base
 from handlers import workout_session
 from services import progress_analytics as analytics
+from utils.clock import today as local_today
 
 
 @pytest.fixture
@@ -185,3 +186,43 @@ async def test_lbs_converted_to_kg_on_write(isolated_db):
     )
     row = await isolated_db.fetch_one("SELECT weight FROM workout_sets")
     assert row["weight"] == pytest.approx(45.359237)
+
+
+@pytest.mark.asyncio
+async def test_history_skips_empty_and_shows_integer_reps(isolated_db):
+    await _user(isolated_db)
+    today = local_today().isoformat()
+    empty = await isolated_db.execute(
+        "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
+        (1, today, "09:13"),
+    )
+    filled = await isolated_db.execute(
+        "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
+        (1, today, "09:14"),
+    )
+    await workout_session.persist_session_exercises_from_state(
+        filled.lastrowid,
+        [
+            {
+                "name": "Присед",
+                "type": "strength",
+                "sets": 3,
+                "set_data": [
+                    {"reps": 8, "weight": 100},
+                    {"reps": 10, "weight": 100},
+                    {"reps": 8, "weight": 100},
+                ],
+            }
+        ],
+    )
+    await workout_session.delete_empty_sessions(1)
+    leftover = await isolated_db.fetch_one(
+        "SELECT id FROM workout_sessions WHERE id = ?",
+        (empty.lastrowid,),
+    )
+    assert leftover is None
+    history = await analytics.fetch_session_history(1, limit=10)
+    assert len(history) == 1
+    assert "нет упражнений" not in (history[0]["exercises"] or "")
+    assert "Присед 8/10/8" in history[0]["exercises"]
+    assert "8.666" not in history[0]["exercises"]

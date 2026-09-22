@@ -8,6 +8,7 @@ import os
 
 from database.base import db
 from utils.logging import log_action
+from utils.clock import normalize_hhmm
 
 logger = logging.getLogger(__name__)
 router = Router()
@@ -290,7 +291,7 @@ async def process_notification_time(message: Message, state: FSMContext):
              notifications_enabled = excluded.notifications_enabled,
              notification_time = excluded.notification_time,
              updated_at = CURRENT_TIMESTAMP""",
-        (user_id, True, time_text)
+        (user_id, True, normalize_hhmm(time_text))
     )
     
     # Клавиатура
@@ -301,7 +302,7 @@ async def process_notification_time(message: Message, state: FSMContext):
     )
     
     await message.answer(
-        f"✅ Время уведомлений установлено на {time_text}\n\n"
+        f"✅ Время уведомлений установлено на {normalize_hhmm(time_text)}\n\n"
         f"Теперь вы будете получать уведомления в это время.",
         reply_markup=builder.as_markup()
     )

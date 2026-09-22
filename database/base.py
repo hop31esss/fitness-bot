@@ -151,6 +151,8 @@ async def create_tables():
             units TEXT DEFAULT 'kg',
             notifications_enabled BOOLEAN DEFAULT FALSE,
             notification_time TEXT DEFAULT '18:00',
+            last_reminder_date TEXT,
+            last_weekly_stats_date TEXT,
             weekly_workout_goal INTEGER NOT NULL DEFAULT 3,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -442,6 +444,8 @@ async def create_tables():
         "ALTER TABLE workout_exercises ADD COLUMN source_table TEXT",
         "ALTER TABLE workout_exercises ADD COLUMN source_id TEXT",
         "ALTER TABLE user_settings ADD COLUMN weekly_workout_goal INTEGER NOT NULL DEFAULT 3",
+        "ALTER TABLE user_settings ADD COLUMN last_reminder_date TEXT",
+        "ALTER TABLE user_settings ADD COLUMN last_weekly_stats_date TEXT",
         "ALTER TABLE users ADD COLUMN pro_banner_shown_after_progress INTEGER DEFAULT 0",
         "ALTER TABLE users ADD COLUMN pro_workout_milestone_prompt_shown INTEGER DEFAULT 0",
         "ALTER TABLE referrals ADD COLUMN reward_granted_at TIMESTAMP",
@@ -486,6 +490,27 @@ async def create_tables():
     )
 
     await migrate_legacy_workouts()
+    await db.execute(
+        """
+        DELETE FROM workout_sessions
+        WHERE id NOT IN (SELECT DISTINCT session_id FROM workout_exercises)
+          AND id NOT IN (
+            SELECT CAST(json_extract(session_data, '$.session_id') AS INTEGER)
+            FROM active_workout_sessions
+            WHERE json_extract(session_data, '$.session_id') IS NOT NULL
+          )
+        """
+    )
+    try:
+        await db.execute(
+            """
+            UPDATE workout_exercises
+            SET reps = CAST(ROUND(reps) AS INTEGER)
+            WHERE reps IS NOT NULL
+            """
+        )
+    except Exception:
+        logger.debug("Could not normalize workout_exercises.reps")
     
     logger.info("✅ Все индексы созданы")
     logger.info("🎉 База данных полностью инициализирована!")

@@ -3,12 +3,12 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import date
 
 from database.base import db
 from utils.logging import log_action
 from utils.units import to_kg
 from services.progress_analytics import fetch_session_history, format_kg
+from utils.clock import now_hm, today_iso
 
 router = Router()
 
@@ -233,11 +233,11 @@ async def process_weight(message: Message, state: FSMContext):
     weight = to_kg(weight, (settings or {}).get("units", "kg"))
     
     # Ручной ввод также пишет в каноническую модель сессий и подходов.
-    today = date.today().isoformat()
+    today = today_iso()
     await db.execute(
         """INSERT INTO workout_sessions (user_id, date, start_time, end_time)
-           VALUES (?, ?, time('now', 'localtime'), time('now', 'localtime'))""",
-        (user_id, today),
+           VALUES (?, ?, ?, ?)""",
+        (user_id, today, now_hm(), now_hm()),
     )
     session = await db.fetch_one("SELECT last_insert_rowid() AS id")
     await db.execute(
@@ -281,7 +281,7 @@ async def workout_history(callback: CallbackQuery):
         text = "📋 *История тренировок*\n\n"
         for s in sessions:
             text += f"📅 {s['date']} {s['start_time'] or ''}\n"
-            text += f"{s['exercises'] or 'нет упражнений'}\n"
+            text += f"{s['exercises']}\n"
             text += f"⚖️ Объём: {format_kg(s['volume'] or 0)} кг\n\n"
     else:
         text = "📋 *История тренировок*\n\nПока нет тренировок"

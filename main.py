@@ -6,6 +6,7 @@ from aiogram.types import ErrorEvent
 from config import BOT_TOKEN
 from database.base import init_db, close_db
 from middlewares.cancel import CancelMiddleware
+from services.notifications import run_notification_scheduler
 
 # --- ИМПОРТЫ РОУТЕРОВ  ---
 from handlers.start import router as start_router
@@ -106,6 +107,7 @@ async def main():
             logger.error(f"❌ Ошибка регистрации роутера '{name}': {e}")
 
     logger.info("✅ Базовые роутеры зарегистрированы, бот запускается...")
+    reminder_task = asyncio.create_task(run_notification_scheduler(bot))
 
     # Запуск бота
     try:
@@ -113,6 +115,11 @@ async def main():
     except Exception as e:
         logger.error(f"Ошибка при запуске бота: {e}")
     finally:
+        reminder_task.cancel()
+        try:
+            await reminder_task
+        except asyncio.CancelledError:
+            pass
         await close_db()
         await bot.session.close()
         logger.info("Бот остановлен")

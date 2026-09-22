@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from typing import Any
 
 from database.base import db
+from utils.clock import today as local_today
 
 VALID_PERIODS = (7, 30, 90)
 DEFAULT_WEEKLY_GOAL = 3
@@ -114,7 +115,7 @@ def _current_streak(days: Iterable[date], today: date | None = None) -> int:
     unique = set(days)
     if not unique:
         return 0
-    cursor = today or date.today()
+    cursor = today or local_today()
     if cursor not in unique:
         cursor -= timedelta(days=1)
     streak = 0
@@ -274,22 +275,84 @@ async def fetch_day_exercises(user_id: int, day: str) -> list[dict[str, Any]]:
     return result
 
 
+def format_exercise_history_line(
+    name: str,
+    set_reps: list[int],
+    aggregate_sets: Any,
+    aggregate_reps: Any,
+) -> str:
+    """Show integer reps; mixed sets are listed instead of a float average."""
+    if set_reps:
+        count = len(set_reps)
+        if len(set(set_reps)) == 1:
+            return f"{name} {count}×{set_reps[0]}"
+        return f"{name} {'/'.join(str(value) for value in set_reps)}"
+    sets = int(_number(aggregate_sets))
+    reps = int(round(_number(aggregate_reps)))
+    return f"{name} {sets}×{reps}"
+
+
 async def fetch_session_history(user_id: int, limit: int = 10) -> list[dict[str, Any]]:
-    return await db.fetch_all(
+    sessions = await db.fetch_all(
         f"""
         SELECT ws.id, ws.date, ws.start_time,
-               GROUP_CONCAT(we.exercise_name || ' ' || we.sets || '×' || we.reps, '\n')
-                   AS exercises,
                COALESCE(SUM({EXERCISE_VOLUME_SQL}), 0) AS volume
         FROM workout_sessions ws
-        LEFT JOIN workout_exercises we ON we.session_id = ws.id
+        JOIN workout_exercises we ON we.session_id = ws.id
         WHERE ws.user_id = ?
         GROUP BY ws.id
-        ORDER BY ws.date DESC, ws.start_time DESC
+        HAVING COUNT(we.id) > 0
+        ORDER BY ws.date DESC, ws.start_time DESC, ws.id DESC
         LIMIT ?
         """,
         (user_id, limit),
     )
+    if not sessions:
+        return []
+
+    session_ids = [row["id"] for row in sessions]
+    placeholders = ",".join("?" * len(session_ids))
+    exercises = await db.fetch_all(
+        f"""
+        SELECT id, session_id, exercise_name, sets, reps
+        FROM workout_exercises
+        WHERE session_id IN ({placeholders})
+        ORDER BY order_num ASC, id ASC
+        """,
+        tuple(session_ids),
+    )
+    set_rows = await db.fetch_all(
+        f"""
+        SELECT s.workout_exercise_id, s.reps
+        FROM workout_sets s
+        JOIN workout_exercises we ON we.id = s.workout_exercise_id
+        WHERE we.session_id IN ({placeholders})
+        ORDER BY s.set_number ASC, s.id ASC
+        """,
+        tuple(session_ids),
+    )
+    reps_by_exercise: dict[int, list[int]] = defaultdict(list)
+    for row in set_rows:
+        reps_by_exercise[row["workout_exercise_id"]].append(int(row["reps"] or 0))
+
+    lines_by_session: dict[int, list[str]] = defaultdict(list)
+    for exercise in exercises:
+        lines_by_session[exercise["session_id"]].append(
+            format_exercise_history_line(
+                exercise["exercise_name"],
+                reps_by_exercise.get(exercise["id"], []),
+                exercise.get("sets"),
+                exercise.get("reps"),
+            )
+        )
+
+    result = []
+    for session in sessions:
+        item = dict(session)
+        item["exercises"] = "\n".join(lines_by_session.get(session["id"], []))
+        item["volume"] = _number(item.get("volume"))
+        result.append(item)
+    return result
 
 
 async def fetch_week_journal(user_id: int, start: str, end: str) -> list[dict[str, Any]]:
@@ -440,7 +503,7 @@ async def fetch_premium_analytics(user_id: int, days: int = 30) -> dict[str, Any
         raise ValueError(f"period must be one of {VALID_PERIODS}")
     history = await fetch_canonical_history(user_id, days, include_previous=True)
     sessions = await _fetch_sessions(user_id, max(days * 2, 90))
-    today = date.today()
+    today = local_today()
     current_start = today - timedelta(days=days - 1)
     previous_start = current_start - timedelta(days=days)
 

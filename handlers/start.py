@@ -1,5 +1,3 @@
-from datetime import date
-
 from aiogram import F, Router
 from aiogram.filters import CommandStart
 from aiogram.types import CallbackQuery, InlineKeyboardButton, Message
@@ -9,6 +7,7 @@ from database.base import db
 from handlers.referral import handle_referral_join
 from keyboards.main import get_main_keyboard
 from utils.logging import log_action
+from utils.clock import today_iso
 
 router = Router()
 
@@ -82,7 +81,7 @@ def build_section_back_menu() -> InlineKeyboardBuilder:
 
 
 async def build_start_payload(user_id: int, first_name: str) -> tuple[str, object]:
-    today = date.today().isoformat()
+    today = today_iso()
     today_sessions = await db.fetch_one(
         """
         SELECT COUNT(*) as cnt

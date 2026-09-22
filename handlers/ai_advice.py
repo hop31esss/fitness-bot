@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from aiogram import F, Router
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -11,6 +9,7 @@ from handlers.premium import build_teaser_paywall, premium_cta_markup
 from services.openai_service import openai_service
 from services.premium_access import has_premium_access
 from services.progress_analytics import fetch_premium_analytics
+from utils.clock import today_iso
 
 router = Router()
 
@@ -44,7 +43,7 @@ async def ai_advice_menu(callback: CallbackQuery):
     """AI hub is visible to everyone; deep actions are Premium."""
     user_id = callback.from_user.id
     premium = await has_premium_access(user_id)
-    today = datetime.now().date().isoformat()
+    today = today_iso()
     today_workouts = await db.fetch_one(
         """
         SELECT COUNT(*) as cnt

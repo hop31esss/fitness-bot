@@ -5,9 +5,17 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime
 
 from database.base import db
+from handlers.premium import build_teaser_paywall, premium_cta_markup
+from services.openai_service import openai_service
+from services.premium_access import has_premium_access
+from services.program_import import (
+    format_template_exercises,
+    parse_program_text,
+    suggested_program_name,
+)
+from utils.clock import now_hm, today_iso
 
 
 # === ПРИНУДИТЕЛЬНОЕ СОЗДАНИЕ ТАБЛИЦЫ (как в workout_journal) ===
@@ -60,6 +68,12 @@ class TemplateCopyStates(StatesGroup):
 class TemplateShareStates(StatesGroup):
     waiting_friend_id = State()
 
+class TemplateImportStates(StatesGroup):
+    waiting_paste = State()
+    waiting_import_name = State()
+    waiting_ai_prompt = State()
+    waiting_ai_name = State()
+
 
 def _normalize_db_exercise(ex: dict) -> dict:
     """Приводит запись workout_exercises к формату шаблона."""
@@ -100,6 +114,20 @@ async def _load_session_exercises(session_id: int) -> list:
     )
     return [_normalize_db_exercise(row) for row in rows]
 
+
+async def _save_user_template(user_id: int, name: str, exercises: list) -> None:
+    await db.execute(
+        "INSERT INTO workout_templates (user_id, name, exercises) VALUES (?, ?, ?)",
+        (user_id, name.strip()[:60], json.dumps(exercises, ensure_ascii=False)),
+    )
+
+
+def _saved_template_markup():
+    return InlineKeyboardBuilder().row(
+        InlineKeyboardButton(text="🚀 НАЧАТЬ", callback_data="template_start_list"),
+        InlineKeyboardButton(text="📚 В БИБЛИОТЕКУ", callback_data="templates"),
+    ).as_markup()
+
 # ========== ГЛАВНОЕ МЕНЮ ШАБЛОНОВ ==========
 
 @router.callback_query(F.data == "templates")
@@ -115,30 +143,31 @@ async def templates_menu(callback: CallbackQuery):
     
     text = "📚 *Библиотека тренировок*\n\n"
     if templates:
-        text += "Ваши сохранённые программы:\n\n"
-        for t in templates:
-            text += f"📌 {t['name']}\n"
+        text += "Нажмите на программу, чтобы открыть, начать или изменить её.\n"
     else:
-        text += "У вас пока нет сохранённых программ.\n\nСоздайте первую из сегодняшней тренировки!"
+        text += "У вас пока нет сохранённых программ.\nВставьте свою из заметок, создайте вручную или попросите ИИ."
     
     builder = InlineKeyboardBuilder()
+    for t in templates:
+        builder.row(
+            InlineKeyboardButton(text=f"📌 {t['name']}", callback_data=f"template_open:{t['id']}")
+        )
+    builder.row(
+        InlineKeyboardButton(text="📥 ВСТАВИТЬ ИЗ ТЕКСТА", callback_data="template_import_paste")
+    )
+    builder.row(
+        InlineKeyboardButton(text="🤖 СОЗДАТЬ С ИИ", callback_data="template_ai_create")
+    )
     builder.row(
         InlineKeyboardButton(text="➕ СОЗДАТЬ ИЗ ТЕКУЩЕЙ", callback_data="template_create_from_current")
     )
     builder.row(
-        InlineKeyboardButton(text="🧩 СОЗДАТЬ ВРУЧНУЮ", callback_data="template_create_manual")
-    )
-    builder.row(
-        InlineKeyboardButton(text="🕘 СОЗДАТЬ ИЗ ИСТОРИИ", callback_data="template_create_from_history")
+        InlineKeyboardButton(text="🧩 СОЗДАТЬ ВРУЧНУЮ", callback_data="template_create_manual"),
+        InlineKeyboardButton(text="🕘 ИЗ ИСТОРИИ", callback_data="template_create_from_history")
     )
     if templates:
         builder.row(
-            InlineKeyboardButton(text="📋 ВЫБРАТЬ", callback_data="template_list")
-        )
-        builder.row(
-            InlineKeyboardButton(text="🚀 НАЧАТЬ ПО ПРОГРАММЕ", callback_data="template_start_list")
-        )
-        builder.row(
+            InlineKeyboardButton(text="🚀 НАЧАТЬ ПО ПРОГРАММЕ", callback_data="template_start_list"),
             InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ", callback_data="template_edit_list")
         )
     builder.row(
@@ -224,9 +253,10 @@ async def template_create_from_history(callback: CallbackQuery):
         """
         SELECT ws.id, ws.date, ws.start_time, COUNT(we.id) as exercises_count
         FROM workout_sessions ws
-        LEFT JOIN workout_exercises we ON we.session_id = ws.id
+        JOIN workout_exercises we ON we.session_id = ws.id
         WHERE ws.user_id = ?
         GROUP BY ws.id
+        HAVING COUNT(we.id) > 0
         ORDER BY ws.id DESC
         LIMIT 10
         """,
@@ -376,30 +406,7 @@ async def template_manual_save(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "template_list")
 async def template_list(callback: CallbackQuery):
-    user_id = callback.from_user.id
-    
-    templates = await db.fetch_all(
-        "SELECT id, name FROM workout_templates WHERE user_id = ? ORDER BY created_at DESC",
-        (user_id,)
-    )
-    
-    builder = InlineKeyboardBuilder()
-    for t in templates:
-        builder.row(
-            InlineKeyboardButton(
-                text=f"📌 {t['name']}",
-                callback_data=f"apply_template:{t['id']}"
-            )
-        )
-    builder.row(
-        InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates")
-    )
-    
-    await callback.message.edit_text(
-        "Выберите программу для добавления в текущую тренировку:",
-        reply_markup=builder.as_markup()
-    )
-    await callback.answer()
+    await templates_menu(callback)
 
 
 @router.callback_query(F.data == "template_start_list")
@@ -433,8 +440,27 @@ async def start_template_workout(callback: CallbackQuery, state: FSMContext):
         await callback.answer("❌ Программа не найдена", show_alert=True)
         return
 
-    today = datetime.now().date().isoformat()
-    current_time = datetime.now().strftime("%H:%M")
+    planned = json.loads(template["exercises"])
+    if not planned:
+        await callback.answer("❌ В программе нет упражнений", show_alert=True)
+        return
+
+    from handlers.workout_session import (
+        clear_workout_session,
+        delete_empty_sessions,
+        delete_workout_session,
+        planned_to_live_exercise,
+        save_workout_session,
+        show_workout_menu,
+    )
+
+    data = await state.get_data()
+    await delete_workout_session(data.get("session_id"))
+    await delete_empty_sessions(callback.from_user.id)
+    await clear_workout_session(callback.from_user.id)
+
+    today = today_iso()
+    current_time = now_hm()
     await db.execute(
         "INSERT INTO workout_sessions (user_id, date, start_time, template_id) VALUES (?, ?, ?, ?)",
         (callback.from_user.id, today, current_time, template_id),
@@ -442,31 +468,18 @@ async def start_template_workout(callback: CallbackQuery, state: FSMContext):
     row = await db.fetch_one("SELECT last_insert_rowid() as id")
     session_id = row["id"]
 
-    planned = json.loads(template["exercises"])
-    exercises = []
-    for ex in planned:
-        if ex.get("type") == "strength":
-            weight = ex.get("weight")
-            exercises.append({
-                "name": ex.get("name"),
-                "type": "strength",
-                "sets": ex.get("sets"),
-                "reps": ex.get("reps"),
-                "weight": weight,
-                "reps_display": str(ex.get("reps")),
-                "weight_display": f"{weight} кг" if weight else "б/в",
-                "planned_sets": ex.get("sets"),
-                "planned_reps": ex.get("reps"),
-                "planned_weight": weight,
-            })
-
+    exercises = [planned_to_live_exercise(ex) for ex in planned if ex.get("name")]
+    await state.clear()
     await state.update_data(
         session_id=session_id,
         template_id=template_id,
-        exercises=exercises
+        exercises=exercises,
     )
-    from handlers.workout_session import show_workout_menu
-    await callback.message.answer(f"🚀 Тренировка по программе «{template['name']}» начата.")
+    await save_workout_session(callback.from_user.id, state)
+    await callback.message.answer(
+        f"🚀 Тренировка по программе «{template['name']}» начата.\n"
+        "Упражнения уже подставлены — поправьте подходы при необходимости и завершите, как обычную тренировку."
+    )
     await show_workout_menu(callback.message, state)
     await callback.answer()
 
@@ -482,16 +495,22 @@ async def apply_template(callback: CallbackQuery, state: FSMContext):
     if not template:
         await callback.answer("❌ Шаблон не найден", show_alert=True)
         return
-    
-    exercises = json.loads(template['exercises'])
-    
+
+    from handlers.workout_session import planned_to_live_exercise, show_workout_menu
+
+    exercises = json.loads(template["exercises"])
     data = await state.get_data()
-    current_exercises = data.get('exercises', [])
-    current_exercises.extend(exercises)
+    if not data.get("session_id"):
+        callback.data = f"start_template:{template_id}"
+        await start_template_workout(callback, state)
+        return
+
+    live = [planned_to_live_exercise(ex) for ex in exercises if ex.get("name")]
+    current_exercises = data.get("exercises", [])
+    current_exercises.extend(live)
     await state.update_data(exercises=current_exercises)
-    
+
     await callback.answer(f"✅ Программа «{template['name']}» добавлена")
-    from handlers.workout_session import show_workout_menu
     await show_workout_menu(callback.message, state)
 
 # ========== РЕДАКТИРОВАНИЕ ==========
@@ -558,6 +577,9 @@ async def template_edit_menu(callback: CallbackQuery, state: FSMContext):
     )
     
     builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🚀 НАЧАТЬ ТРЕНИРОВКУ", callback_data=f"start_template:{template_id}")
+    )
     builder.row(
         InlineKeyboardButton(text="📝 ИЗМЕНИТЬ НАЗВАНИЕ", callback_data=f"template_edit_name:{template_id}")
     )
@@ -677,7 +699,10 @@ async def template_view(callback: CallbackQuery):
     
     builder = InlineKeyboardBuilder()
     builder.row(
-        InlineKeyboardButton(text="📋 ВЫБРАТЬ ДРУГОЙ", callback_data="template_list"),
+        InlineKeyboardButton(text="🚀 НАЧАТЬ ТРЕНИРОВКУ", callback_data=f"start_template:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="✏️ РЕДАКТИРОВАТЬ", callback_data=f"template_edit:{template_id}"),
         InlineKeyboardButton(text="↩️ НАЗАД", callback_data="templates")
     )
     
@@ -977,3 +1002,169 @@ async def update_exercise_field(message: Message, state: FSMContext):
         ).as_markup()
     )
     await state.clear()
+
+
+@router.callback_query(F.data.startswith("template_open:"))
+async def template_open(callback: CallbackQuery):
+    template_id = int(callback.data.split(":")[1])
+    template = await db.fetch_one(
+        "SELECT id, name, exercises FROM workout_templates WHERE id = ? AND user_id = ?",
+        (template_id, callback.from_user.id),
+    )
+    if not template:
+        await callback.answer("❌ Программа не найдена", show_alert=True)
+        return
+    exercises = json.loads(template["exercises"])
+    text = (
+        f"📌 *{template['name']}*\n\n"
+        f"{format_template_exercises(exercises) or 'Пока нет упражнений.'}\n\n"
+        "Можно сразу начать тренировку по этой программе или поправить упражнения."
+    )
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="🚀 НАЧАТЬ ТРЕНИРОВКУ", callback_data=f"start_template:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="➕ В ТЕКУЩУЮ", callback_data=f"apply_template:{template_id}"),
+        InlineKeyboardButton(text="✏️ ИЗМЕНИТЬ", callback_data=f"template_edit:{template_id}")
+    )
+    builder.row(
+        InlineKeyboardButton(text="↩️ К СПИСКУ", callback_data="templates")
+    )
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
+
+
+@router.callback_query(F.data == "template_import_paste")
+async def template_import_paste(callback: CallbackQuery, state: FSMContext):
+    await callback.message.edit_text(
+        "📥 *Вставьте программу текстом*\n\n"
+        "Скопируйте из заметок или с сайта и отправьте одним сообщением.\n\n"
+        "Примеры строк:\n"
+        "`Присед 4x8 100`\n"
+        "`Румынская тяга 3×10`\n"
+        "`Разгибание ног — 4 подхода по 12`\n\n"
+        "Строки без подходов бот пропустит."
+    )
+    await state.set_state(TemplateImportStates.waiting_paste)
+    await callback.answer()
+
+
+@router.message(TemplateImportStates.waiting_paste)
+async def template_import_parse(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("❌ Пришлите программу текстом.")
+        return
+    exercises = parse_program_text(message.text)
+    if not exercises:
+        await message.answer(
+            "❌ Не удалось разобрать упражнения.\n"
+            "Каждая строка должна быть вида «Присед 4x8 100»."
+        )
+        return
+    suggested = suggested_program_name(message.text) or "Моя программа"
+    await state.update_data(import_exercises=exercises, pending_template_name=suggested)
+    await message.answer(
+        "📋 *Программа распознана*\n\n"
+        f"{format_template_exercises(exercises)}\n\n"
+        f"Название: «{suggested}».\n"
+        "Отправьте другое название или нажмите сохранить.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="💾 СОХРАНИТЬ", callback_data="template_import_save")
+        ).as_markup(),
+    )
+    await state.set_state(TemplateImportStates.waiting_import_name)
+
+
+@router.message(TemplateImportStates.waiting_import_name)
+async def template_import_name(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("❌ Пришлите название текстом.")
+        return
+    data = await state.get_data()
+    exercises = data.get("import_exercises") or []
+    if not exercises:
+        await message.answer("❌ Сначала вставьте программу.")
+        return
+    await _save_user_template(message.from_user.id, message.text, exercises)
+    await state.clear()
+    await message.answer(
+        f"✅ Программа «{message.text.strip()[:60]}» сохранена.",
+        reply_markup=_saved_template_markup(),
+    )
+
+
+@router.callback_query(F.data == "template_import_save")
+async def template_import_save(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    exercises = data.get("import_exercises") or []
+    name = data.get("pending_template_name") or "Моя программа"
+    if not exercises:
+        await callback.answer("❌ Сначала вставьте программу", show_alert=True)
+        return
+    await _save_user_template(callback.from_user.id, name, exercises)
+    await state.clear()
+    await callback.message.edit_text(
+        f"✅ Программа «{name}» сохранена.",
+        reply_markup=_saved_template_markup(),
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "template_ai_create")
+async def template_ai_create(callback: CallbackQuery, state: FSMContext):
+    if not await has_premium_access(callback.from_user.id):
+        await callback.message.edit_text(
+            build_teaser_paywall(
+                "🤖 *Программа с ИИ*",
+                ["Опишите цель и опыт — бот соберёт программу и сохранит её в библиотеку."],
+                ["Персональная программа под зал или дом", "Сразу можно начать тренировку"],
+            ),
+            reply_markup=premium_cta_markup("templates"),
+        )
+        await callback.answer()
+        return
+    if not openai_service.enabled:
+        await callback.answer("AI сейчас недоступен. Вставьте программу текстом.", show_alert=True)
+        return
+    await callback.message.edit_text(
+        "🤖 *Создание программы с ИИ*\n\n"
+        "Напишите, какая программа нужна. Например:\n"
+        "«3 дня в зале, набор массы, средний уровень, есть штанга и тренажёры, 60 минут»."
+    )
+    await state.set_state(TemplateImportStates.waiting_ai_prompt)
+    await callback.answer()
+
+
+@router.message(TemplateImportStates.waiting_ai_prompt)
+async def template_ai_generate(message: Message, state: FSMContext):
+    if not message.text:
+        await message.answer("❌ Опишите программу текстом.")
+        return
+    wait = await message.answer("🤔 Составляю программу...")
+    user = await db.fetch_one(
+        "SELECT first_name FROM users WHERE user_id = ?",
+        (message.from_user.id,),
+    )
+    result = await openai_service.generate_training_program(
+        message.text.strip(),
+        {"first_name": (user or {}).get("first_name")},
+    )
+    if not result or not result.get("exercises"):
+        await wait.edit_text(
+            "❌ Не удалось составить программу. Попробуйте описать цель иначе "
+            "или вставьте готовую программу текстом."
+        )
+        return
+    name = result.get("name") or "Программа ИИ"
+    exercises = result["exercises"]
+    await state.update_data(import_exercises=exercises, pending_template_name=name)
+    await wait.edit_text(
+        f"🤖 *Черновик программы «{name}»*\n\n"
+        f"{format_template_exercises(exercises)}\n\n"
+        "Можно сохранить как есть или прислать другое название.",
+        reply_markup=InlineKeyboardBuilder().row(
+            InlineKeyboardButton(text="💾 СОХРАНИТЬ", callback_data="template_import_save")
+        ).as_markup(),
+    )
+    await state.set_state(TemplateImportStates.waiting_import_name)

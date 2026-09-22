@@ -1,6 +1,9 @@
-import openai
+import json
 import logging
+import re
 from typing import Optional, Dict, List
+
+import openai
 from config import AITUNNEL_API_KEY, OPENAI_ENABLED
 
 logger = logging.getLogger(__name__)
@@ -247,6 +250,82 @@ class OpenAIService:
             
         except Exception as e:
             logger.error(f"Ошибка AITUNNEL: {e}")
+            return None
+
+    async def generate_training_program(self, request: str, user_data: Optional[Dict] = None) -> Optional[Dict]:
+        """Generate a structured program the bot can save as a template."""
+        if not self.enabled:
+            return None
+
+        user_data = user_data or {}
+        name = user_data.get("first_name") or "спортсмен"
+        prompt = f"""Составь силовую программу тренировки для клиента {name}.
+
+ЗАПРОС КЛИЕНТА:
+{request}
+
+Верни ТОЛЬКО JSON без markdown:
+{{
+  "name": "короткое название программы на русском",
+  "exercises": [
+    {{"name": "Название упражнения", "sets": 4, "reps": 8, "weight": null}}
+  ]
+}}
+
+Правила:
+- 4-8 силовых упражнений
+- sets и reps только целые числа
+- weight можно null, если рабочий вес неизвестен
+- названия упражнений на русском
+- без разминки и заминки в списке"""
+
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": "Ты тренер. Отвечай только валидным JSON программы тренировки.",
+                    },
+                    {"role": "user", "content": prompt},
+                ],
+                max_tokens=800,
+                temperature=0.6,
+            )
+            raw = (response.choices[0].message.content or "").strip()
+            if raw.startswith("```"):
+                raw = re.sub(r"^```(?:json)?\s*", "", raw)
+                raw = re.sub(r"\s*```$", "", raw)
+            payload = json.loads(raw)
+            from services.program_import import parse_program_text, suggested_program_name
+
+            exercises = []
+            if isinstance(payload, dict):
+                exercises = parse_program_text(json.dumps(payload, ensure_ascii=False))
+                program_name = (
+                    str(payload.get("name") or "").strip()
+                    or suggested_program_name(request)
+                    or "Программа ИИ"
+                )
+            else:
+                exercises = parse_program_text(raw)
+                program_name = suggested_program_name(request) or "Программа ИИ"
+            if not exercises:
+                return None
+            return {"name": program_name[:60], "exercises": exercises}
+        except Exception as e:
+            logger.error(f"Ошибка генерации программы: {e}")
+            try:
+                from services.program_import import parse_program_text, suggested_program_name
+                fallback_text = response.choices[0].message.content if "response" in locals() else ""
+                exercises = parse_program_text(fallback_text or "")
+                if exercises:
+                    return {
+                        "name": (suggested_program_name(request) or "Программа ИИ")[:60],
+                        "exercises": exercises,
+                    }
+            except Exception:
+                pass
             return None
 
 # Глобальный экземпляр

@@ -4,13 +4,13 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, date
 import logging
 
 from database.base import db
 from services.premium_triggers import maybe_send_workout_milestone_prompt
 from handlers.referral import maybe_grant_referrer_retention_bonus
 from utils.units import to_kg
+from utils.clock import now, now_hm, today_iso
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -71,6 +71,68 @@ def _replace_exact_sets(
         exercise["weight_display"] = f"{weight:g} кг" if weight else "б/в"
 
 
+def planned_to_live_exercise(exercise: dict) -> dict:
+    """Turn a saved program row into the live workout format with per-set data."""
+    if exercise.get("type") and exercise.get("type") != "strength":
+        return dict(exercise)
+    sets = max(1, int(exercise.get("sets") or 0))
+    reps = int(exercise.get("reps") or 0)
+    weight = exercise.get("weight")
+    try:
+        weight = None if weight in (None, "", "-") else float(weight)
+    except (TypeError, ValueError):
+        weight = None
+    live = {
+        "name": exercise.get("name") or "Упражнение",
+        "type": "strength",
+        "sets": sets,
+        "reps": reps,
+        "weight": weight,
+        "set_data": [
+            {"reps": reps, "weight": weight, "weight_done": True}
+            for _ in range(sets)
+        ],
+        "reps_display": str(reps),
+        "weight_display": f"{weight:g} кг" if weight else "б/в",
+        "planned_sets": sets,
+        "planned_reps": reps,
+        "planned_weight": weight,
+    }
+    return live
+
+
+async def delete_workout_session(session_id: int | None) -> None:
+    if not session_id:
+        return
+    await db.execute("DELETE FROM workout_sessions WHERE id = ?", (session_id,))
+
+
+async def delete_empty_sessions(
+    user_id: int | None = None,
+    keep_session_id: int | None = None,
+) -> None:
+    """Drop sessions that never received exercises so they do not clutter history."""
+    clauses = [
+        "id NOT IN (SELECT DISTINCT session_id FROM workout_exercises)",
+        """id NOT IN (
+            SELECT CAST(json_extract(session_data, '$.session_id') AS INTEGER)
+            FROM active_workout_sessions
+            WHERE json_extract(session_data, '$.session_id') IS NOT NULL
+        )""",
+    ]
+    params: list = []
+    if user_id is not None:
+        clauses.append("user_id = ?")
+        params.append(user_id)
+    if keep_session_id is not None:
+        clauses.append("id != ?")
+        params.append(keep_session_id)
+    await db.execute(
+        f"DELETE FROM workout_sessions WHERE {' AND '.join(clauses)}",
+        tuple(params),
+    )
+
+
 async def persist_session_exercises_from_state(session_id: int, exercises: list):
     """Atomically replace canonical exercise rows and their exact sets."""
     if not db.conn:
@@ -107,7 +169,7 @@ async def persist_session_exercises_from_state(session_id: int, exercises: list)
                 for number, reps, weight in _exact_sets(exercise)
             ]
             aggregate_reps = (
-                sum(item[1] for item in exact_sets) / len(exact_sets)
+                int(round(sum(item[1] for item in exact_sets) / len(exact_sets)))
                 if exact_sets else 0
             )
             aggregate_weight = (
@@ -165,25 +227,44 @@ class WorkoutSessionStates(StatesGroup):
 async def start_workout(callback: CallbackQuery, state: FSMContext):
     """Начало новой тренировки"""
     user_id = callback.from_user.id
-    
-    # Проверяем, есть ли сохранённая тренировка
-    if await load_workout_session(user_id, state):
-        # Спрашиваем, продолжать ли
-        builder = InlineKeyboardBuilder()
-        builder.row(
-            InlineKeyboardButton(text="✅ ПРОДОЛЖИТЬ", callback_data="continue_workout"),
-            InlineKeyboardButton(text="🆕 НАЧАТЬ ЗАНОВО", callback_data="new_workout")
-        )
-        
-        await callback.message.edit_text(
-            "💪 *У вас есть незавершённая тренировка!*\n\n"
-            "Хотите продолжить или начать новую?",
-            reply_markup=builder.as_markup()
-        )
-        await callback.answer()
-        return
-    
-    # Если нет сохранённой - начинаем новую
+    restored = await load_workout_session(user_id, state)
+    data = await state.get_data() if restored else {}
+    keep_id = data.get("session_id")
+    await delete_empty_sessions(user_id, keep_session_id=keep_id)
+
+    if restored:
+        session_id = data.get("session_id")
+        exercises = data.get("exercises") or []
+        exists = None
+        if session_id:
+            exists = await db.fetch_one(
+                "SELECT id FROM workout_sessions WHERE id = ?",
+                (session_id,),
+            )
+        if exercises:
+            if not exists:
+                await db.execute(
+                    "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
+                    (user_id, today_iso(), now_hm()),
+                )
+                row = await db.fetch_one("SELECT last_insert_rowid() as id")
+                await state.update_data(session_id=row["id"])
+            builder = InlineKeyboardBuilder()
+            builder.row(
+                InlineKeyboardButton(text="✅ ПРОДОЛЖИТЬ", callback_data="continue_workout"),
+                InlineKeyboardButton(text="🆕 НАЧАТЬ ЗАНОВО", callback_data="new_workout")
+            )
+            await callback.message.edit_text(
+                "💪 *У вас есть незавершённая тренировка!*\n\n"
+                "Хотите продолжить или начать новую?",
+                reply_markup=builder.as_markup()
+            )
+            await callback.answer()
+            return
+        await delete_workout_session(session_id)
+        await clear_workout_session(user_id)
+        await state.clear()
+
     await start_new_workout(callback.message, state)
     await callback.answer()
 
@@ -192,8 +273,8 @@ async def start_new_workout(message, state: FSMContext):
     user_id = message.chat.id
     
     # Создаём новую сессию в БД
-    today = date.today().isoformat()
-    current_time = datetime.now().strftime("%H:%M")
+    today = today_iso()
+    current_time = now_hm()
     
     await db.execute(
         "INSERT INTO workout_sessions (user_id, date, start_time) VALUES (?, ?, ?)",
@@ -220,6 +301,8 @@ async def continue_workout(callback: CallbackQuery, state: FSMContext):
 async def new_workout(callback: CallbackQuery, state: FSMContext):
     """Начать новую тренировку (удаляя старую)"""
     user_id = callback.from_user.id
+    data = await state.get_data()
+    await delete_workout_session(data.get("session_id"))
     await clear_workout_session(user_id)
     await state.clear()
     await start_new_workout(callback.message, state)
@@ -273,6 +356,18 @@ async def save_workout(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         logger.info(f"📦 Данные тренировки: {data.get('exercises', [])}")
+        if not data.get("exercises"):
+            await delete_workout_session(data.get("session_id"))
+            await clear_workout_session(user_id)
+            await state.clear()
+            await callback.message.edit_text(
+                "❌ Нечего сохранять: нет упражнений.",
+                reply_markup=InlineKeyboardBuilder().row(
+                    InlineKeyboardButton(text="🏠 В ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
+                ).as_markup(),
+            )
+            await callback.answer()
+            return
         
         await save_workout_session(user_id, state)
         logger.info("✅ Тренировка сохранена в БД")
@@ -303,7 +398,7 @@ async def save_workout_session(user_id: int, state: FSMContext):
     session_data = {
         'session_id': data.get('session_id'),
         'exercises': data.get('exercises', []),
-        'start_time': datetime.now().isoformat()
+        'start_time': now().isoformat()
     }
     
     logger.info(f"📦 session_data: {session_data}")
@@ -848,18 +943,30 @@ async def save_exercise(state: FSMContext, message: Message):
 async def finish_workout(callback: CallbackQuery, state: FSMContext):
     """Завершение тренировки"""
     data = await state.get_data()
-    session_id = data['session_id']
-    exercises = data.get('exercises', [])
+    session_id = data.get("session_id")
+    exercises = data.get("exercises", [])
+    user_id = callback.from_user.id
+
+    if not exercises:
+        await delete_workout_session(session_id)
+        await clear_workout_session(user_id)
+        await state.clear()
+        await callback.message.edit_text(
+            "❌ Тренировка не сохранена: нет упражнений.",
+            reply_markup=InlineKeyboardBuilder().row(
+                InlineKeyboardButton(text="🏠 ГЛАВНОЕ МЕНЮ", callback_data="back_to_main")
+            ).as_markup(),
+        )
+        await callback.answer()
+        return
 
     await persist_session_exercises_from_state(session_id, exercises)
     
     await db.execute(
         "UPDATE workout_sessions SET end_time = ? WHERE id = ?",
-        (datetime.now().strftime("%H:%M"), session_id)
+        (now_hm(), session_id)
     )
     
-    # Очищаем сохранённую сессию
-    user_id = callback.from_user.id
     await clear_workout_session(user_id)
     
     text = (
@@ -881,6 +988,9 @@ async def finish_workout(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "cancel_workout")
 async def cancel_workout(callback: CallbackQuery, state: FSMContext):
+    data = await state.get_data()
+    await delete_workout_session(data.get("session_id"))
+    await clear_workout_session(callback.from_user.id)
     await callback.message.edit_text("❌ Тренировка отменена")
     await state.clear()
     await callback.answer()

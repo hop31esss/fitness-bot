@@ -4,7 +4,7 @@ from aiogram.types import Message, CallbackQuery, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
-from datetime import datetime, date, timedelta
+from datetime import datetime, timedelta
 
 from database.base import db
 from services.progress_analytics import (
@@ -13,6 +13,7 @@ from services.progress_analytics import (
     fetch_week_journal,
     format_kg,
 )
+from utils.clock import today as local_today
 
 router = Router()
 logger = logging.getLogger(__name__)
@@ -54,7 +55,7 @@ async def workout_journal_menu(callback: CallbackQuery):
 async def journal_today(callback: CallbackQuery):
     """Тренировки за сегодня"""
     user_id = callback.from_user.id
-    today_str = date.today().isoformat()
+    today_str = local_today().isoformat()
     exercises = await fetch_day_exercises(user_id, today_str)
     
     if not exercises:
@@ -95,7 +96,7 @@ async def journal_week(callback: CallbackQuery):
     """Тренировки за неделю"""
     user_id = callback.from_user.id
     
-    end_date = date.today()
+    end_date = local_today()
     start_date = end_date - timedelta(days=7)
     
     week_data = await fetch_week_journal(
